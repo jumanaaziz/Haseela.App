@@ -5,7 +5,6 @@ import 'package:flutter_screenutil/flutter_screenutil.dart';
 import '../../widgets/custom_bottom_nav.dart';
 import 'parent_profile_screen.dart';
 import 'task_management_screen.dart';
-import 'parent_wishlist_screen.dart';
 
 class ParentLeaderboardScreen extends StatefulWidget {
   const ParentLeaderboardScreen({super.key});
@@ -24,6 +23,7 @@ class _ParentLeaderboardScreenState extends State<ParentLeaderboardScreen> {
   List<LeaderboardEntry> _monthlyEntries = [];
   bool _isLoadingWeekly = true;
   bool _isLoadingMonthly = true;
+  bool _isMonthDropdownOpen = false; // Track dropdown state
 
   // Month selector for monthly leaderboard - normalize to first day of month at midnight
   DateTime _selectedMonth = DateTime(
@@ -44,16 +44,27 @@ class _ParentLeaderboardScreenState extends State<ParentLeaderboardScreen> {
     return DateTime(date.year, date.month, 1);
   }
 
-  // Get list of months (only current year) - normalized
+  // Get list of all months (current year) - normalized
   List<DateTime> get _availableMonths {
     final now = DateTime.now();
     final months = <DateTime>[];
-    // Get all months from January to current month of the current year
-    for (int month = 1; month <= now.month; month++) {
+    // Get all 12 months of the current year
+    for (int month = 1; month <= 12; month++) {
       months.add(_normalizeMonth(DateTime(now.year, month, 1)));
     }
-    // Reverse to show current month first
-    return months.reversed.toList();
+    // Show current month first, then previous months (most recent first), then future months
+    final currentMonth = now.month;
+    final currentMonthDate = _normalizeMonth(
+      DateTime(now.year, currentMonth, 1),
+    );
+    final pastMonths =
+        months.where((m) => m.isBefore(currentMonthDate)).toList()
+          ..sort((a, b) => b.compareTo(a)); // Most recent past month first
+    final futureMonths = months
+        .where((m) => m.isAfter(currentMonthDate))
+        .toList();
+
+    return [currentMonthDate, ...pastMonths, ...futureMonths];
   }
 
   String _formatMonth(DateTime date) {
@@ -74,11 +85,52 @@ class _ParentLeaderboardScreenState extends State<ParentLeaderboardScreen> {
     return months[date.month - 1];
   }
 
+  // Check if any challenge tasks exist (not just completed ones)
+  Future<bool> _hasChallengeTasks() async {
+    try {
+      final childrenSnapshot = await FirebaseFirestore.instance
+          .collection("Parents")
+          .doc(_uid)
+          .collection("Children")
+          .get();
+
+      for (var childDoc in childrenSnapshot.docs) {
+        final challengeTasks = await FirebaseFirestore.instance
+            .collection("Parents")
+            .doc(_uid)
+            .collection("Children")
+            .doc(childDoc.id)
+            .collection("Tasks")
+            .where('isChallenge', isEqualTo: true)
+            .limit(1)
+            .get();
+
+        if (challengeTasks.docs.isNotEmpty) {
+          return true; // Found at least one challenge task
+        }
+      }
+      return false; // No challenge tasks found
+    } catch (e) {
+      print('Error checking for challenge tasks: $e');
+      return false;
+    }
+  }
+
   /// Load weekly leaderboard (last 7 days, sorted by count then speed)
   Future<void> _loadWeeklyLeaderboard() async {
     setState(() => _isLoadingWeekly = true);
 
     try {
+      // First check if any challenge tasks exist
+      final hasChallenges = await _hasChallengeTasks();
+      if (!hasChallenges) {
+        setState(() {
+          _weeklyEntries = [];
+          _isLoadingWeekly = false;
+        });
+        return;
+      }
+
       // Get start of current week (last 7 days)
       final now = DateTime.now();
       final weekStart = now.subtract(const Duration(days: 7));
@@ -125,9 +177,8 @@ class _ParentLeaderboardScreenState extends State<ParentLeaderboardScreen> {
           '     Found ${allChallengeTasks.docs.length} challenge task(s) total',
         );
 
-        // Get completed challenge tasks (both 'done' and 'pending' - pending means child submitted, parent might approve later)
-        // We'll filter by completedDate in code since Firestore can't do OR queries easily
-        final doneTasksSnapshot = await FirebaseFirestore.instance
+        // Only get approved tasks (status = 'done') - children only appear after parent approval
+        final approvedTasksSnapshot = await FirebaseFirestore.instance
             .collection("Parents")
             .doc(_uid)
             .collection("Children")
@@ -137,31 +188,15 @@ class _ParentLeaderboardScreenState extends State<ParentLeaderboardScreen> {
             .where('status', isEqualTo: 'done')
             .get();
 
-        final pendingTasksSnapshot = await FirebaseFirestore.instance
-            .collection("Parents")
-            .doc(_uid)
-            .collection("Children")
-            .doc(childId)
-            .collection("Tasks")
-            .where('isChallenge', isEqualTo: true)
-            .where('status', isEqualTo: 'pending')
-            .get();
+        print('     - Approved tasks: ${approvedTasksSnapshot.docs.length}');
 
-        print('     - Done tasks: ${doneTasksSnapshot.docs.length}');
-        print('     - Pending tasks: ${pendingTasksSnapshot.docs.length}');
-
-        // Combine both done and pending tasks
-        final allCompletedTasks = [
-          ...doneTasksSnapshot.docs,
-          ...pendingTasksSnapshot.docs,
-        ];
-
-        // Calculate score based on how fast they completed (earliest completion wins)
+        // Calculate score based on when child completed the task (completedDate)
+        // NOT based on when parent approved it - ranking is by completion time
         DateTime? earliestCompletion;
         int completedCount = 0;
 
-        if (allCompletedTasks.isNotEmpty) {
-          for (var taskDoc in allCompletedTasks) {
+        if (approvedTasksSnapshot.docs.isNotEmpty) {
+          for (var taskDoc in approvedTasksSnapshot.docs) {
             final taskData = taskDoc.data() as Map<String, dynamic>?;
 
             // Debug: print task details
@@ -194,9 +229,10 @@ class _ParentLeaderboardScreenState extends State<ParentLeaderboardScreen> {
           }
         }
 
-        // Always add entry, even if completedCount is 0
+        // Always add entry, even if child has 0 tasks
+        // This allows showing all children when challenge exists but no one completed yet
         print(
-          '   ✓ Adding entry: $childName with $completedCount completion(s)',
+          '   ✓ Adding entry: $childName with $completedCount approved completion(s)',
         );
         entriesMap[childId] = LeaderboardEntry(
           childId: childId,
@@ -207,25 +243,37 @@ class _ParentLeaderboardScreenState extends State<ParentLeaderboardScreen> {
         );
       }
 
-      // Convert to list and sort: by count first, then by speed for those with tasks, then alphabetically for those with 0 tasks
-      final entries = entriesMap.values.toList();
-      entries.sort((a, b) {
-        // First sort by count (more completions = higher rank)
-        if (b.completedCount != a.completedCount) {
-          return b.completedCount.compareTo(a.completedCount);
-        }
-        // If both have tasks (count > 0), sort by earliest completion time (faster = higher rank)
-        if (a.completedCount > 0 && b.completedCount > 0) {
+      // Convert to list and separate into two groups:
+      // 1. Children with completed tasks (for top 3)
+      // 2. All children (for the full list below)
+      final allEntries = entriesMap.values.toList();
+      final entriesWithTasks = allEntries.where((e) => e.completedCount > 0).toList();
+      final entriesWithZeroTasks = allEntries.where((e) => e.completedCount == 0).toList();
+      
+      // Sort children with tasks by count first, then by completion time (earliest = higher rank)
+      // Ranking is based on when child completed (completedDate), NOT when parent approved
+      if (entriesWithTasks.isNotEmpty) {
+        entriesWithTasks.sort((a, b) {
+          // First sort by count (more completions = higher rank)
+          if (b.completedCount != a.completedCount) {
+            return b.completedCount.compareTo(a.completedCount);
+          }
+          // If same count, sort by earliest completion time (who completed first = higher rank)
+          // This uses completedDate (when child completed), not approval time
           return a.earliestCompletion.compareTo(b.earliestCompletion);
-        }
-        // If both have 0 tasks, sort alphabetically by name
-        return a.childName.toLowerCase().compareTo(b.childName.toLowerCase());
-      });
+        });
+      }
+      
+      // Sort children with 0 tasks alphabetically
+      entriesWithZeroTasks.sort((a, b) => a.childName.toLowerCase().compareTo(b.childName.toLowerCase()));
+      
+      // Combine: entries with tasks first (for top 3), then entries with 0 tasks (for list)
+      final sortedEntries = [...entriesWithTasks, ...entriesWithZeroTasks];
 
-      print('✅ Weekly leaderboard loaded: ${entries.length} entries');
+      print('✅ Weekly leaderboard loaded: ${sortedEntries.length} entries (${entriesWithTasks.length} with tasks, ${entriesWithZeroTasks.length} with 0 tasks)');
 
       setState(() {
-        _weeklyEntries = entries;
+        _weeklyEntries = sortedEntries;
         _isLoadingWeekly = false;
       });
     } catch (e) {
@@ -237,11 +285,75 @@ class _ParentLeaderboardScreenState extends State<ParentLeaderboardScreen> {
     }
   }
 
+  // Check if the selected month has any challenge tasks
+  Future<bool> _monthHasChallenges(DateTime month) async {
+    try {
+      final monthStart = DateTime(month.year, month.month, 1);
+      final monthEnd = DateTime(month.year, month.month + 1, 0, 23, 59, 59);
+
+      // Get all children
+      final childrenSnapshot = await FirebaseFirestore.instance
+          .collection("Parents")
+          .doc(_uid)
+          .collection("Children")
+          .get();
+
+      // Check if any child has approved challenge tasks in this month
+      // Only count approved tasks (status = 'done'), not pending ones
+      for (var childDoc in childrenSnapshot.docs) {
+        final approvedTasks = await FirebaseFirestore.instance
+            .collection("Parents")
+            .doc(_uid)
+            .collection("Children")
+            .doc(childDoc.id)
+            .collection("Tasks")
+            .where('isChallenge', isEqualTo: true)
+            .where('status', isEqualTo: 'done')
+            .get();
+
+        // Check if any approved task was completed in this month
+        for (var taskDoc in approvedTasks.docs) {
+          final taskData = taskDoc.data();
+          if (taskData['completedDate'] != null) {
+            final completedDate = (taskData['completedDate'] as Timestamp)
+                .toDate();
+            if (completedDate.isAfter(
+                  monthStart.subtract(const Duration(seconds: 1)),
+                ) &&
+                completedDate.isBefore(
+                  monthEnd.add(const Duration(seconds: 1)),
+                )) {
+              return true; // Found at least one approved challenge in this month
+            }
+          }
+        }
+      }
+      return false; // No challenges found in this month
+    } catch (e) {
+      print('Error checking if month has challenges: $e');
+      return false;
+    }
+  }
+
   /// Load monthly leaderboard (selected month, sorted by count then speed)
   Future<void> _loadMonthlyLeaderboard() async {
     setState(() => _isLoadingMonthly = true);
 
     try {
+      // First, verify that the selected month has challenges
+      final hasChallenges = await _monthHasChallenges(_selectedMonth);
+
+      if (!hasChallenges) {
+        print(
+          '⚠️ Selected month ${_formatMonth(_selectedMonth)} has no challenge tasks',
+        );
+        setState(() {
+          _monthlyEntries = [];
+          _isLoadingMonthly = false;
+        });
+        return;
+      }
+
       // Get start and end of selected month
       final monthStart = DateTime(_selectedMonth.year, _selectedMonth.month, 1);
       final monthEnd = DateTime(
@@ -282,8 +394,8 @@ class _ParentLeaderboardScreenState extends State<ParentLeaderboardScreen> {
         final childName = childData?['firstName'] ?? 'Unknown';
         final childAvatar = childData?['avatar'] as String?;
 
-        // Get completed challenge tasks (both 'done' and 'pending')
-        final doneTasksSnapshot = await FirebaseFirestore.instance
+        // Only get approved tasks (status = 'done') - children only appear after parent approval
+        final approvedTasksSnapshot = await FirebaseFirestore.instance
             .collection("Parents")
             .doc(_uid)
             .collection("Children")
@@ -293,28 +405,13 @@ class _ParentLeaderboardScreenState extends State<ParentLeaderboardScreen> {
             .where('status', isEqualTo: 'done')
             .get();
 
-        final pendingTasksSnapshot = await FirebaseFirestore.instance
-            .collection("Parents")
-            .doc(_uid)
-            .collection("Children")
-            .doc(childId)
-            .collection("Tasks")
-            .where('isChallenge', isEqualTo: true)
-            .where('status', isEqualTo: 'pending')
-            .get();
-
-        // Combine both done and pending tasks
-        final allCompletedTasks = [
-          ...doneTasksSnapshot.docs,
-          ...pendingTasksSnapshot.docs,
-        ];
-
-        // Calculate score based on how fast they completed (earliest completion wins)
+        // Calculate score based on when child completed the task (completedDate)
+        // NOT based on when parent approved it - ranking is by completion time
         DateTime? earliestCompletion;
         int completedCount = 0;
 
-        if (allCompletedTasks.isNotEmpty) {
-          for (var taskDoc in allCompletedTasks) {
+        if (approvedTasksSnapshot.docs.isNotEmpty) {
+          for (var taskDoc in approvedTasksSnapshot.docs) {
             final taskData = taskDoc.data() as Map<String, dynamic>?;
             if (taskData != null && taskData['completedDate'] != null) {
               final completedDate = (taskData['completedDate'] as Timestamp)
@@ -338,7 +435,8 @@ class _ParentLeaderboardScreenState extends State<ParentLeaderboardScreen> {
           }
         }
 
-        // Always add entry, even if completedCount is 0
+        // Always add entry, even if child has 0 tasks
+        // This allows showing all children when challenge exists but no one completed yet
         entriesMap[childId] = LeaderboardEntry(
           childId: childId,
           childName: childName,
@@ -348,23 +446,37 @@ class _ParentLeaderboardScreenState extends State<ParentLeaderboardScreen> {
         );
       }
 
-      // Convert to list and sort: by count first, then by speed for those with tasks, then alphabetically for those with 0 tasks
-      final entries = entriesMap.values.toList();
-      entries.sort((a, b) {
-        // First sort by count (more completions = higher rank)
-        if (b.completedCount != a.completedCount) {
-          return b.completedCount.compareTo(a.completedCount);
-        }
-        // If both have tasks (count > 0), sort by earliest completion time (faster = higher rank)
-        if (a.completedCount > 0 && b.completedCount > 0) {
+      // Convert to list and separate into two groups:
+      // 1. Children with completed tasks (for top 3)
+      // 2. All children (for the full list below)
+      final allEntries = entriesMap.values.toList();
+      final entriesWithTasks = allEntries.where((e) => e.completedCount > 0).toList();
+      final entriesWithZeroTasks = allEntries.where((e) => e.completedCount == 0).toList();
+      
+      // Sort children with tasks by count first, then by completion time (earliest = higher rank)
+      // Ranking is based on when child completed (completedDate), NOT when parent approved
+      if (entriesWithTasks.isNotEmpty) {
+        entriesWithTasks.sort((a, b) {
+          // First sort by count (more completions = higher rank)
+          if (b.completedCount != a.completedCount) {
+            return b.completedCount.compareTo(a.completedCount);
+          }
+          // If same count, sort by earliest completion time (who completed first = higher rank)
+          // This uses completedDate (when child completed), not approval time
           return a.earliestCompletion.compareTo(b.earliestCompletion);
-        }
-        // If both have 0 tasks, sort alphabetically by name
-        return a.childName.toLowerCase().compareTo(b.childName.toLowerCase());
-      });
+        });
+      }
+      
+      // Sort children with 0 tasks alphabetically
+      entriesWithZeroTasks.sort((a, b) => a.childName.toLowerCase().compareTo(b.childName.toLowerCase()));
+      
+      // Combine: entries with tasks first (for top 3), then entries with 0 tasks (for list)
+      final sortedEntries = [...entriesWithTasks, ...entriesWithZeroTasks];
+
+      print('✅ Monthly leaderboard loaded: ${sortedEntries.length} entries (${entriesWithTasks.length} with tasks, ${entriesWithZeroTasks.length} with 0 tasks)');
 
       setState(() {
-        _monthlyEntries = entries;
+        _monthlyEntries = sortedEntries;
         _isLoadingMonthly = false;
       });
     } catch (e) {
@@ -391,7 +503,7 @@ class _ParentLeaderboardScreenState extends State<ParentLeaderboardScreen> {
         );
         break;
       case 2:
-        Navigator.pushReplacement(
+         Navigator.pushReplacement(
           context,
           MaterialPageRoute(
             builder: (_) => ParentWishlistScreen(parentId: _uid),
@@ -514,7 +626,28 @@ class _ParentLeaderboardScreenState extends State<ParentLeaderboardScreen> {
       );
     }
 
-    if (_weeklyEntries.isEmpty) {
+    // Check if challenge tasks exist using FutureBuilder
+    return FutureBuilder<bool>(
+      future: _hasChallengeTasks(),
+      builder: (context, snapshot) {
+        if (snapshot.connectionState == ConnectionState.waiting) {
+          return Padding(
+            padding: EdgeInsets.symmetric(horizontal: 20.w),
+            child: Center(
+              child: Padding(
+                padding: EdgeInsets.all(40.h),
+                child: CircularProgressIndicator(
+                  valueColor: AlwaysStoppedAnimation<Color>(
+                    const Color(0xFF7C3AED),
+                  ),
+                ),
+              ),
+            ),
+          );
+        }
+
+        final hasChallenges = snapshot.data ?? false;
+        if (!hasChallenges) {
       return Padding(
         padding: EdgeInsets.symmetric(horizontal: 20.w),
         child: Container(
@@ -533,7 +666,7 @@ class _ParentLeaderboardScreenState extends State<ParentLeaderboardScreen> {
               ),
               SizedBox(height: 16.h),
               Text(
-                'No challenge completions yet',
+                'No challenge task yet',
                 style: TextStyle(
                   fontSize: 18.sp,
                   fontWeight: FontWeight.w600,
@@ -542,7 +675,7 @@ class _ParentLeaderboardScreenState extends State<ParentLeaderboardScreen> {
               ),
               SizedBox(height: 8.h),
               Text(
-                'Create a challenge task to see the weekly leaderboard',
+                'Start a challenge task to see the weekly leaderboard',
                 textAlign: TextAlign.center,
                 style: TextStyle(
                   fontSize: 14.sp,
@@ -553,22 +686,156 @@ class _ParentLeaderboardScreenState extends State<ParentLeaderboardScreen> {
           ),
         ),
       );
-    }
+        }
 
-    return Padding(
-      padding: EdgeInsets.symmetric(horizontal: 20.w),
-      child: Column(
-        children: [
-          _buildTopThreeLeaderboard(_weeklyEntries),
-          if (_weeklyEntries.length > 3) ...[
-            SizedBox(height: 24.h),
-            ...List.generate(_weeklyEntries.length - 3, (index) {
-              final entry = _weeklyEntries[index + 3];
-              return _buildLeaderboardItem(entry: entry, rank: index + 4);
-            }),
-          ],
+        // Don't show "no completions" message here - if challenge exists, show children with 0 tasks
+        // The "no challenge task" message is already handled by the FutureBuilder above
+
+        // Separate entries: those with tasks (for top 3) and all entries (for list)
+        final entriesWithTasks = _weeklyEntries.where((e) => e.completedCount > 0).toList();
+        final allEntries = _weeklyEntries; // All entries for the list below
+        
+        return Padding(
+          padding: EdgeInsets.symmetric(horizontal: 20.w),
+          child: Column(
+            children: [
+              // Top 3: Only show children who have completed tasks
+              _buildTopThreeLeaderboard(entriesWithTasks),
+              // List below: Show all remaining children (those not in top 3)
+              if (allEntries.length > 3 || entriesWithTasks.isEmpty) ...[
+                SizedBox(height: 24.h),
+                // If no one has completed tasks, show all children alphabetically
+                if (entriesWithTasks.isEmpty) ...[
+                  ...List.generate(allEntries.length, (index) {
+                    final entry = allEntries[index];
+                    return _buildLeaderboardItem(entry: entry, rank: index + 1);
+                  }),
+                ] else ...[
+                  // Show remaining children (those not in top 3)
+                  ...List.generate(allEntries.length - 3, (index) {
+                    final entry = allEntries[index + 3];
+                    return _buildLeaderboardItem(entry: entry, rank: index + 4);
+                  }),
+                ],
+              ],
+            ],
+          ),
+        );
+      },
+    );
+  }
+
+  Widget _buildMonthSelectorList() {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        // Selected month button (always visible)
+        GestureDetector(
+          onTap: () {
+            setState(() {
+              _isMonthDropdownOpen = !_isMonthDropdownOpen;
+            });
+          },
+          child: Container(
+            width: double.infinity,
+            padding: EdgeInsets.symmetric(horizontal: 16.w, vertical: 14.h),
+            decoration: BoxDecoration(
+              color: Colors.white,
+              borderRadius: BorderRadius.circular(8.r),
+              border: Border.all(color: const Color(0xFFE2E8F0), width: 1),
+            ),
+            child: Row(
+              children: [
+                Expanded(
+                  child: Text(
+                    _formatMonth(_selectedMonth),
+                    style: TextStyle(
+                      fontSize: 16.sp,
+                      fontWeight: FontWeight.w600,
+                      color: const Color(0xFF7C3AED),
+                    ),
+                  ),
+                ),
+                Icon(
+                  _isMonthDropdownOpen
+                      ? Icons.keyboard_arrow_up
+                      : Icons.keyboard_arrow_down,
+                  color: const Color(0xFF7C3AED),
+                  size: 24.sp,
+                ),
+              ],
+            ),
+          ),
+        ),
+
+        // Dropdown list (only show when open)
+        if (_isMonthDropdownOpen) ...[
+          SizedBox(height: 8.h),
+          Container(
+            decoration: BoxDecoration(
+              color: Colors.white,
+              borderRadius: BorderRadius.circular(8.r),
+              border: Border.all(color: const Color(0xFFE2E8F0), width: 1),
+            ),
+            child: Column(
+              children: _availableMonths.map((DateTime month) {
+                final normalized = _normalizeMonth(month);
+                final selectedNormalized = _normalizeMonth(_selectedMonth);
+                final isSelected = selectedNormalized == normalized;
+
+                return GestureDetector(
+                  onTap: () async {
+                    final newNormalized = _normalizeMonth(month);
+                    final currentSelected = _normalizeMonth(_selectedMonth);
+
+                    // Only load if it's a different month
+                    if (newNormalized != currentSelected) {
+                      setState(() {
+                        _selectedMonth = newNormalized;
+                        _isLoadingMonthly = true;
+                        _isMonthDropdownOpen =
+                            false; // Close dropdown after selection
+                        _monthlyEntries = []; // Clear previous data
+                      });
+                      await _loadMonthlyLeaderboard();
+                    } else {
+                      // Close dropdown even if same month is selected
+                      setState(() {
+                        _isMonthDropdownOpen = false;
+                      });
+                    }
+                  },
+                  child: Container(
+                    width: double.infinity,
+                    padding: EdgeInsets.symmetric(
+                      horizontal: 16.w,
+                      vertical: 14.h,
+                    ),
+                    decoration: BoxDecoration(
+                      color: isSelected
+                          ? const Color(0xFF7C3AED).withOpacity(0.15)
+                          : Colors.transparent,
+                      borderRadius: BorderRadius.circular(8.r),
+                    ),
+                    child: Text(
+                      _formatMonth(normalized),
+                      style: TextStyle(
+                        fontSize: 16.sp,
+                        fontWeight: isSelected
+                            ? FontWeight.w600
+                            : FontWeight.w400,
+                        color: isSelected
+                            ? const Color(0xFF7C3AED)
+                            : const Color(0xFF1E293B),
+                      ),
+                    ),
+                  ),
+                );
+              }).toList(),
+            ),
+          ),
         ],
-      ),
+      ],
     );
   }
 
@@ -578,46 +845,8 @@ class _ParentLeaderboardScreenState extends State<ParentLeaderboardScreen> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          // Month selector dropdown
-          Container(
-            padding: EdgeInsets.symmetric(horizontal: 12.w, vertical: 8.h),
-            decoration: BoxDecoration(
-              color: Colors.white,
-              borderRadius: BorderRadius.circular(12.r),
-              border: Border.all(color: const Color(0xFFE2E8F0), width: 1.5),
-            ),
-            child: DropdownButtonHideUnderline(
-              child: DropdownButton<DateTime>(
-                value: _normalizeMonth(_selectedMonth),
-                isExpanded: true,
-                icon: Icon(
-                  Icons.arrow_drop_down,
-                  color: const Color(0xFF7C3AED),
-                  size: 28.sp,
-                ),
-                style: TextStyle(
-                  fontSize: 16.sp,
-                  fontWeight: FontWeight.w600,
-                  color: const Color(0xFF1E293B),
-                ),
-                items: _availableMonths.map((DateTime month) {
-                  final normalized = _normalizeMonth(month);
-                  return DropdownMenuItem<DateTime>(
-                    value: normalized,
-                    child: Text(_formatMonth(normalized)),
-                  );
-                }).toList(),
-                onChanged: (DateTime? newMonth) {
-                  if (newMonth != null) {
-                    setState(() {
-                      _selectedMonth = _normalizeMonth(newMonth);
-                    });
-                    _loadMonthlyLeaderboard();
-                  }
-                },
-              ),
-            ),
-          ),
+          // Month selector list
+          _buildMonthSelectorList(),
 
           SizedBox(height: 24.h),
 
@@ -672,19 +901,39 @@ class _ParentLeaderboardScreenState extends State<ParentLeaderboardScreen> {
                 ],
               ),
             )
-          else
-            Column(
-              children: [
-                _buildTopThreeLeaderboard(_monthlyEntries),
-                if (_monthlyEntries.length > 3) ...[
-                  SizedBox(height: 24.h),
-                  ...List.generate(_monthlyEntries.length - 3, (index) {
-                    final entry = _monthlyEntries[index + 3];
-                    return _buildLeaderboardItem(entry: entry, rank: index + 4);
-                  }),
-                ],
-              ],
+          else ...[
+            // Separate entries: those with tasks (for top 3) and all entries (for list)
+            Builder(
+              builder: (context) {
+                final entriesWithTasks = _monthlyEntries.where((e) => e.completedCount > 0).toList();
+                final allEntries = _monthlyEntries; // All entries for the list below
+                
+                return Column(
+                  children: [
+                    // Top 3: Only show children who have completed tasks
+                    _buildTopThreeLeaderboard(entriesWithTasks),
+                    // List below: Show all remaining children (those not in top 3)
+                    if (allEntries.length > 3 || entriesWithTasks.isEmpty) ...[
+                      SizedBox(height: 24.h),
+                      // If no one has completed tasks, show all children alphabetically
+                      if (entriesWithTasks.isEmpty) ...[
+                        ...List.generate(allEntries.length, (index) {
+                          final entry = allEntries[index];
+                          return _buildLeaderboardItem(entry: entry, rank: index + 1);
+                        }),
+                      ] else ...[
+                        // Show remaining children (those not in top 3)
+                        ...List.generate(allEntries.length - 3, (index) {
+                          final entry = allEntries[index + 3];
+                          return _buildLeaderboardItem(entry: entry, rank: index + 4);
+                        }),
+                      ],
+                    ],
+                  ],
+                );
+              },
             ),
+          ],
         ],
       ),
     );
@@ -728,7 +977,10 @@ class _ParentLeaderboardScreenState extends State<ParentLeaderboardScreen> {
   }
 
   Widget _buildTopThreeLeaderboard(List<LeaderboardEntry> entries) {
-    if (entries.isEmpty) return const SizedBox.shrink();
+    // Always show 3 ranks, even if only one child
+    final first = entries.isNotEmpty ? entries[0] : null;
+    final second = entries.length > 1 ? entries[1] : null;
+    final third = entries.length > 2 ? entries[2] : null;
 
     return Column(
       children: [
@@ -737,49 +989,76 @@ class _ParentLeaderboardScreenState extends State<ParentLeaderboardScreen> {
           mainAxisAlignment: MainAxisAlignment.center,
           crossAxisAlignment: CrossAxisAlignment.end,
           children: [
-            // 2nd place with silver medal
-            if (entries.length > 1)
-              Expanded(
-                child: Stack(
-                  clipBehavior: Clip.none,
-                  alignment: Alignment.topCenter,
-                  children: [
-                    // The card
-                    _buildTopThreeCard(
-                      entry: entries[1],
-                      rank: 2,
-                      color: const Color(0xFFFF9800),
-                    ),
-                    // Silver medal icon positioned at the top of the card
-                    Positioned(
-                      top: -24.h,
-                      child: Container(
-                        padding: EdgeInsets.all(6.w),
-                        decoration: BoxDecoration(
-                          color: const Color(0xFFC0C0C0), // Silver color
-                          shape: BoxShape.circle,
-                          border: Border.all(color: Colors.white, width: 3),
-                          boxShadow: [
-                            BoxShadow(
-                              color: const Color(0xFFC0C0C0).withOpacity(0.6),
-                              blurRadius: 15,
-                              offset: Offset(0, 4),
-                              spreadRadius: 2,
+            // 2nd place (left) - always show, even if empty
+            Expanded(
+              child: Stack(
+                clipBehavior: Clip.none,
+                alignment: Alignment.topCenter,
+                children: [
+                  // The card
+                  _buildTopThreeCard(
+                    entry: second,
+                    rank: 2,
+                    color: const Color(0xFFFF9800), // Orange
+                  ),
+                  // Star badge with #2
+                  Positioned(
+                    top: -20.h,
+                    child: Container(
+                      width: 40.w,
+                      height: 40.w,
+                      decoration: BoxDecoration(
+                        color: const Color(0xFFC0C0C0), // Always silver color, even when empty
+                        shape: BoxShape.circle,
+                        border: Border.all(color: Colors.white, width: 2),
+                        boxShadow: [
+                          // LED glow effect - multiple layers for depth
+                          BoxShadow(
+                            color: const Color(0xFFC0C0C0).withOpacity(0.8),
+                            blurRadius: 15,
+                            spreadRadius: 2,
+                            offset: Offset(0, 0),
+                          ),
+                          BoxShadow(
+                            color: const Color(0xFFC0C0C0).withOpacity(0.6),
+                            blurRadius: 10,
+                            spreadRadius: 1,
+                            offset: Offset(0, 0),
+                          ),
+                          BoxShadow(
+                            color: const Color(0xFFC0C0C0).withOpacity(0.4),
+                            blurRadius: 5,
+                            offset: Offset(0, 2),
+                          ),
+                        ],
+                      ),
+                      child: Column(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Icon(
+                            Icons.star,
+                            color: Colors.white,
+                            size: 14.sp,
+                          ),
+                          SizedBox(height: 1.h),
+                          Text(
+                            '#2',
+                            style: TextStyle(
+                              fontSize: 10.sp,
+                              fontWeight: FontWeight.bold,
+                              color: Colors.white,
                             ),
-                          ],
-                        ),
-                        child: Icon(
-                          Icons.workspace_premium,
-                          color: Colors.white,
-                          size: 28.sp,
-                        ),
+                          ),
+                        ],
                       ),
                     ),
-                  ],
-                ),
+                  ),
+                ],
               ),
-            if (entries.length > 1) SizedBox(width: 8.w),
-            // 1st place with gold medal
+            ),
+            SizedBox(width: 8.w),
+            // 1st place (center) - always show
             Expanded(
               flex: 2,
               child: Stack(
@@ -788,81 +1067,136 @@ class _ParentLeaderboardScreenState extends State<ParentLeaderboardScreen> {
                 children: [
                   // The card
                   _buildTopThreeCard(
-                    entry: entries[0],
+                    entry: first,
                     rank: 1,
-                    color: const Color(0xFF7C3AED),
+                    color: const Color(0xFF7C3AED), // Purple
                     isFirst: true,
                   ),
-                  // Gold medal icon positioned at the top of the card
+                  // Star badge with #1
                   Positioned(
-                    top: -24.h,
+                    top: -20.h,
                     child: Container(
-                      padding: EdgeInsets.all(6.w),
+                      width: 48.w,
+                      height: 48.w,
                       decoration: BoxDecoration(
-                        color: Colors.amber,
+                        color: first != null ? Colors.yellow[700]! : Colors.grey[300]!,
                         shape: BoxShape.circle,
-                        border: Border.all(color: Colors.white, width: 3),
+                        border: Border.all(color: Colors.white, width: 2),
                         boxShadow: [
+                          // LED glow effect - multiple layers for depth
                           BoxShadow(
-                            color: Colors.amber.withOpacity(0.6),
+                            color: (first != null ? Colors.yellow[700]! : Colors.grey[400]!).withOpacity(0.9),
+                            blurRadius: 20,
+                            spreadRadius: 3,
+                            offset: Offset(0, 0),
+                          ),
+                          BoxShadow(
+                            color: (first != null ? Colors.yellow[600]! : Colors.grey[300]!).withOpacity(0.7),
                             blurRadius: 15,
-                            offset: Offset(0, 4),
                             spreadRadius: 2,
+                            offset: Offset(0, 0),
+                          ),
+                          BoxShadow(
+                            color: (first != null ? Colors.yellow : Colors.grey[200]!).withOpacity(0.5),
+                            blurRadius: 8,
+                            offset: Offset(0, 2),
                           ),
                         ],
                       ),
-                      child: Icon(
-                        Icons.workspace_premium,
-                        color: Colors.white,
-                        size: 28.sp,
+                      child: Column(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Icon(
+                            Icons.star,
+                            color: Colors.white,
+                            size: 16.sp,
+                          ),
+                          SizedBox(height: 1.h),
+                          Text(
+                            '#1',
+                            style: TextStyle(
+                              fontSize: 12.sp,
+                              fontWeight: FontWeight.bold,
+                              color: Colors.white,
+                            ),
+                          ),
+                        ],
                       ),
                     ),
                   ),
                 ],
               ),
             ),
-            if (entries.length > 2) SizedBox(width: 8.w),
-            // 3rd place with bronze medal
-            if (entries.length > 2)
-              Expanded(
-                child: Stack(
-                  clipBehavior: Clip.none,
-                  alignment: Alignment.topCenter,
-                  children: [
-                    // The card
-                    _buildTopThreeCard(
-                      entry: entries[2],
-                      rank: 3,
-                      color: const Color(0xFFFF9800),
-                    ),
-                    // Bronze medal icon positioned at the top of the card
-                    Positioned(
-                      top: -24.h,
-                      child: Container(
-                        padding: EdgeInsets.all(6.w),
-                        decoration: BoxDecoration(
-                          color: const Color(0xFFCD7F32), // Bronze color
-                          shape: BoxShape.circle,
-                          border: Border.all(color: Colors.white, width: 3),
-                          boxShadow: [
-                            BoxShadow(
-                              color: const Color(0xFFCD7F32).withOpacity(0.6),
-                              blurRadius: 15,
-                              offset: Offset(0, 4),
-                              spreadRadius: 2,
+            SizedBox(width: 8.w),
+            // 3rd place (right) - always show, even if empty
+            Expanded(
+              child: Stack(
+                clipBehavior: Clip.none,
+                alignment: Alignment.topCenter,
+                children: [
+                  // The card
+                  _buildTopThreeCard(
+                    entry: third,
+                    rank: 3,
+                    color: const Color(0xFFFF9800), // Orange
+                  ),
+                  // Star badge with #3
+                  Positioned(
+                    top: -20.h,
+                    child: Container(
+                      width: 40.w,
+                      height: 40.w,
+                      decoration: BoxDecoration(
+                        color: const Color(0xFFCD7F32), // Always bronze color, even when empty
+                        shape: BoxShape.circle,
+                        border: Border.all(color: Colors.white, width: 2),
+                        boxShadow: [
+                          // LED glow effect - multiple layers for depth
+                          BoxShadow(
+                            color: const Color(0xFFCD7F32).withOpacity(0.8),
+                            blurRadius: 15,
+                            spreadRadius: 2,
+                            offset: Offset(0, 0),
+                          ),
+                          BoxShadow(
+                            color: const Color(0xFFCD7F32).withOpacity(0.6),
+                            blurRadius: 10,
+                            spreadRadius: 1,
+                            offset: Offset(0, 0),
+                          ),
+                          BoxShadow(
+                            color: const Color(0xFFCD7F32).withOpacity(0.4),
+                            blurRadius: 5,
+                            offset: Offset(0, 2),
+                          ),
+                        ],
+                      ),
+                      child: Column(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Icon(
+                            Icons.star,
+                            color: Colors.white,
+                            size: 14.sp,
+                          ),
+                          SizedBox(height: 1.h),
+                          Text(
+                            '#3',
+                            style: TextStyle(
+                              fontSize: 10.sp,
+                              fontWeight: FontWeight.bold,
+                              color: Colors.white,
                             ),
-                          ],
-                        ),
-                        child: Icon(
-                          Icons.workspace_premium,
-                          color: Colors.white,
-                          size: 28.sp,
-                        ),
+                          ),
+                        ],
                       ),
                     ),
-                  ],
-                ),
+                  ),
+                ],
               ),
+            ),
           ],
         ),
       ],
@@ -870,11 +1204,64 @@ class _ParentLeaderboardScreenState extends State<ParentLeaderboardScreen> {
   }
 
   Widget _buildTopThreeCard({
-    required LeaderboardEntry entry,
+    LeaderboardEntry? entry,
     required int rank,
     required Color color,
     bool isFirst = false,
   }) {
+    // If no entry, show empty card
+    if (entry == null) {
+      final height = isFirst ? 240.h : 200.h;
+      return Container(
+        height: height,
+        padding: EdgeInsets.only(
+          left: 6.w,
+          right: 6.w,
+          top: 18.h,
+          bottom: 10.h,
+        ),
+        decoration: BoxDecoration(
+          color: color.withOpacity(0.3),
+          borderRadius: BorderRadius.circular(16.r),
+          border: Border.all(color: color.withOpacity(0.5), width: 1),
+        ),
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            // Empty avatar circle
+            CircleAvatar(
+              radius: isFirst ? 56.r : 46.r,
+              backgroundColor: Colors.white.withOpacity(0.2),
+              child: Icon(
+                Icons.person,
+                color: Colors.white.withOpacity(0.3),
+                size: isFirst ? 40.sp : 32.sp,
+              ),
+            ),
+            SizedBox(height: 12.h),
+            // Empty name
+            Text(
+              '',
+              style: TextStyle(
+                fontSize: isFirst ? 15.sp : 13.sp,
+                fontWeight: FontWeight.w700,
+                color: Colors.white.withOpacity(0.5),
+              ),
+            ),
+            SizedBox(height: 3.h),
+            // Empty tasks
+            Text(
+              '',
+              style: TextStyle(
+                fontSize: isFirst ? 12.sp : 10.sp,
+                fontWeight: FontWeight.w500,
+                color: Colors.white.withOpacity(0.5),
+              ),
+            ),
+          ],
+        ),
+      );
+    }
     // Fixed heights to prevent overflow - increased slightly for first place to accommodate crown
     final height = isFirst ? 240.h : 200.h;
     final avatarSize = isFirst ? 56.r : 46.r;
@@ -905,24 +1292,7 @@ class _ParentLeaderboardScreenState extends State<ParentLeaderboardScreen> {
         mainAxisSize: MainAxisSize.max,
         crossAxisAlignment: CrossAxisAlignment.center,
         children: [
-          // Rank badge
-          Container(
-            padding: EdgeInsets.symmetric(horizontal: 8.w, vertical: 3.h),
-            decoration: BoxDecoration(
-              color: Colors.white.withOpacity(0.2),
-              borderRadius: BorderRadius.circular(10.r),
-            ),
-            child: Text(
-              '#$rank',
-              style: TextStyle(
-                fontSize: 12.sp,
-                fontWeight: FontWeight.w800,
-                color: Colors.white,
-              ),
-            ),
-          ),
-
-          // Avatar
+          // Avatar (rank badge is now at the top with star)
           Flexible(
             child: CircleAvatar(
               radius: avatarSize,
