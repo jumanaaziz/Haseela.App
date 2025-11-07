@@ -1176,9 +1176,8 @@ class _ChildWishlistDetailsScreenState extends State<ChildWishlistDetailsScreen>
 
   void _showItemProgressModal(WishlistItem item, List<WishlistItem> allItems) {
     final emoji = _getItemEmoji(item.name);
-    final progressPercentage =
-        (_wallet?.spendingBalance ?? 0.0) / item.price * 100;
-    final canAfford = progressPercentage >= 100;
+    final progressPercentage = (_wallet?.spendingBalance ?? 0.0) / item.price;
+    final canAfford = progressPercentage >= 1.0;
 
     showModalBottomSheet(
       context: context,
@@ -1354,7 +1353,7 @@ class _ChildWishlistDetailsScreenState extends State<ChildWishlistDetailsScreen>
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
                   Text(
-                    '${progressPercentage.clamp(0.0, 100.0).toStringAsFixed(0)}% Complete',
+                    '${(progressPercentage.clamp(0.0, 1.0) * 100).toStringAsFixed(0)}% Complete',
                     style: TextStyle(
                       fontSize: 12.sp,
                       color: const Color(0xFF64748B),
