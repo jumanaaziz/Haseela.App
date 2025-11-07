@@ -5,6 +5,7 @@ import 'package:flutter_screenutil/flutter_screenutil.dart';
 import '../../widgets/custom_bottom_nav.dart';
 import 'parent_profile_screen.dart';
 import 'task_management_screen.dart';
+import 'parent_wishlist_screen.dart';
 
 class ParentLeaderboardScreen extends StatefulWidget {
   const ParentLeaderboardScreen({super.key});
