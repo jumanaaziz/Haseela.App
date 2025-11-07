@@ -8,6 +8,8 @@ class WishlistItem {
   final DateTime createdAt;
   final DateTime updatedAt;
   final bool isCompleted;
+  final bool isPurchased; // Purchased status
+  final String category; // Category field
 
   WishlistItem({
     required this.id,
@@ -17,33 +19,39 @@ class WishlistItem {
     required this.createdAt,
     required this.updatedAt,
     this.isCompleted = false,
+    this.isPurchased = false, // Default to false
+    this.category = 'Other', // Default category
   });
 
   factory WishlistItem.fromFirestore(DocumentSnapshot doc) {
     Map<String, dynamic> data = doc.data() as Map<String, dynamic>;
-    
+
     // Handle different field name variations
     String name = data['name'] ?? data['itemName'] ?? '';
     double price = (data['price'] ?? data['itemPrice'] ?? 0.0).toDouble();
     String description = data['description'] ?? '';
-    bool isCompleted = data['isCompleted'] ?? (data['statuss'] == 'completed') ?? false;
-    
+    bool isCompleted =
+        data['isCompleted'] ?? (data['statuss'] == 'completed') ?? false;
+    bool isPurchased = data['isPurchased'] ?? false;
+    String category =
+        data['category'] ?? 'Other'; // Default to 'Other' if not provided
+
     // Handle timestamp fields - use createdAt if available, otherwise use current time
     DateTime createdAt;
     DateTime updatedAt;
-    
+
     if (data['createdAt'] != null && data['createdAt'] is Timestamp) {
       createdAt = (data['createdAt'] as Timestamp).toDate();
     } else {
       createdAt = DateTime.now();
     }
-    
+
     if (data['updatedAt'] != null && data['updatedAt'] is Timestamp) {
       updatedAt = (data['updatedAt'] as Timestamp).toDate();
     } else {
       updatedAt = DateTime.now();
     }
-    
+
     return WishlistItem(
       id: doc.id,
       name: name,
@@ -52,6 +60,8 @@ class WishlistItem {
       createdAt: createdAt,
       updatedAt: updatedAt,
       isCompleted: isCompleted,
+      isPurchased: isPurchased,
+      category: category,
     );
   }
 
@@ -63,6 +73,8 @@ class WishlistItem {
       'createdAt': Timestamp.fromDate(createdAt),
       'updatedAt': Timestamp.fromDate(updatedAt),
       'isCompleted': isCompleted,
+      'isPurchased': isPurchased,
+      'category': category,
     };
   }
 
@@ -74,6 +86,8 @@ class WishlistItem {
     DateTime? createdAt,
     DateTime? updatedAt,
     bool? isCompleted,
+    bool? isPurchased,
+    String? category,
   }) {
     return WishlistItem(
       id: id ?? this.id,
@@ -83,6 +97,8 @@ class WishlistItem {
       createdAt: createdAt ?? this.createdAt,
       updatedAt: updatedAt ?? this.updatedAt,
       isCompleted: isCompleted ?? this.isCompleted,
+      isPurchased: isPurchased ?? this.isPurchased,
+      category: category ?? this.category,
     );
   }
 }

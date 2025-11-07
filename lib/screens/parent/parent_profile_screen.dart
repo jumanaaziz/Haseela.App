@@ -14,6 +14,7 @@ import 'child_profile_view_screen.dart';
 import 'parent_leaderboard_screen.dart';
 import '../services/notification_service.dart';
 import 'dart:io';
+import 'parent_wishlist_screen.dart';
 import 'package:image_picker/image_picker.dart';
 
 class ParentProfileScreen extends StatefulWidget {
@@ -58,24 +59,27 @@ class _ParentProfileScreenState extends State<ParentProfileScreen>
     _parentProfile = null; // Reset profile when initializing
     _loadParentProfile();
     _setupChildrenListener();
-    
+
     // Initialize notifications for the parent role
     WidgetsBinding.instance.addPostFrameCallback((_) {
       // ignore: avoid_print
-      print('🎯 PostFrameCallback: Starting parent notification initialization...');
-      _notificationService.initializeForParent(
-        parentId: _uid,
-      ).then((_) {
-        // ignore: avoid_print
-        print('🎯 Parent notification initialization completed');
-      }).catchError((error, stackTrace) {
-        // ignore: avoid_print
-        print('❌ ===== FAILED TO INITIALIZE PARENT NOTIFICATIONS =====');
-        // ignore: avoid_print
-        print('❌ Error: $error');
-        // ignore: avoid_print
-        print('❌ Stack: $stackTrace');
-      });
+      print(
+        '🎯 PostFrameCallback: Starting parent notification initialization...',
+      );
+      _notificationService
+          .initializeForParent(parentId: _uid)
+          .then((_) {
+            // ignore: avoid_print
+            print('🎯 Parent notification initialization completed');
+          })
+          .catchError((error, stackTrace) {
+            // ignore: avoid_print
+            print('❌ ===== FAILED TO INITIALIZE PARENT NOTIFICATIONS =====');
+            // ignore: avoid_print
+            print('❌ Error: $error');
+            // ignore: avoid_print
+            print('❌ Stack: $stackTrace');
+          });
     });
   }
 
@@ -109,14 +113,16 @@ class _ParentProfileScreenState extends State<ParentProfileScreen>
   void _setupChildrenListener() {
     print('=== SETTING UP REAL-TIME CHILDREN LISTENER ===');
     print('Parent UID: $_uid');
-    
+
     _childrenSubscription?.cancel(); // Cancel existing subscription
-    
+
     _childrenSubscription = FirebaseFirestore.instance
         .collection("Parents")
         .doc(_uid)
         .collection("Children")
-        .snapshots(includeMetadataChanges: true) // Include metadata changes to catch all updates
+        .snapshots(
+          includeMetadataChanges: true,
+        ) // Include metadata changes to catch all updates
         .listen(
           (QuerySnapshot snapshot) {
             print('=== REAL-TIME UPDATE RECEIVED ===');
@@ -129,12 +135,12 @@ class _ParentProfileScreenState extends State<ParentProfileScreen>
                   print('Processing child doc: ${doc.id}');
                   final childData = doc.data() as Map<String, dynamic>?;
                   print('Child data: $childData');
-                  
+
                   if (childData == null) {
                     print('⚠️ Child data is null for ${doc.id}');
                     return null;
                   }
-                  
+
                   try {
                     final childOption = ChildOption.fromFirestore(
                       doc.id,
@@ -198,7 +204,7 @@ class _ParentProfileScreenState extends State<ParentProfileScreen>
             }
           },
         );
-    
+
     print('✅ Children listener set up successfully');
   }
 
@@ -213,7 +219,7 @@ class _ParentProfileScreenState extends State<ParentProfileScreen>
     try {
       print('=== LOADING PARENT PROFILE ===');
       print('Parent UID: $_uid');
-      
+
       // ✅ Fetch parent document
       final doc = await FirebaseFirestore.instance
           .collection("Parents")
@@ -221,7 +227,7 @@ class _ParentProfileScreenState extends State<ParentProfileScreen>
           .get();
 
       print('Document exists: ${doc.exists}');
-      
+
       if (doc.exists && doc.data() != null) {
         final data = doc.data()!;
         print('Document data keys: ${data.keys.toList()}');
@@ -236,35 +242,42 @@ class _ParentProfileScreenState extends State<ParentProfileScreen>
           _isLoadingProfile = false;
         });
         print('✅ Profile loaded successfully');
-        
+
         // Auto-migrate orphaned children from top-level collection
         _migrateOrphanedChildren();
       } else {
         // Document doesn't exist - try to create it from Firebase Auth data
-        print('⚠️ Parent document does not exist, attempting to create from Auth data...');
+        print(
+          '⚠️ Parent document does not exist, attempting to create from Auth data...',
+        );
         final user = FirebaseAuth.instance.currentUser;
         if (user != null && user.email != null) {
           print('Firebase Auth user exists: ${user.email}');
-          
+
           try {
             // Create parent document with minimal data from Auth
             final displayNameParts = user.displayName?.split(' ') ?? [];
             await FirebaseFirestore.instance
                 .collection("Parents")
                 .doc(_uid)
-                .set({
-              'firstName': displayNameParts.isNotEmpty ? displayNameParts.first : 'User',
-              'lastName': displayNameParts.length > 1 
-                  ? displayNameParts.skip(1).join(' ')
-                  : '',
-              'username': user.email!.split('@').first,
-              'email': user.email!,
-              'phoneNumber': user.phoneNumber ?? '',
-              'avatar': null,
-              'createdAt': FieldValue.serverTimestamp(),
-              'role': 'parent',
-            }, SetOptions(merge: true)); // Use merge to avoid overwriting if exists
-            
+                .set(
+                  {
+                    'firstName': displayNameParts.isNotEmpty
+                        ? displayNameParts.first
+                        : 'User',
+                    'lastName': displayNameParts.length > 1
+                        ? displayNameParts.skip(1).join(' ')
+                        : '',
+                    'username': user.email!.split('@').first,
+                    'email': user.email!,
+                    'phoneNumber': user.phoneNumber ?? '',
+                    'avatar': null,
+                    'createdAt': FieldValue.serverTimestamp(),
+                    'role': 'parent',
+                  },
+                  SetOptions(merge: true),
+                ); // Use merge to avoid overwriting if exists
+
             // Reload profile after creating
             print('✅ Parent document created, reloading profile...');
             await _loadParentProfile();
@@ -273,13 +286,19 @@ class _ParentProfileScreenState extends State<ParentProfileScreen>
             setState(() {
               _isLoadingProfile = false;
             });
-            _showToast('Error creating profile. Please contact support.', ToastificationType.error);
+            _showToast(
+              'Error creating profile. Please contact support.',
+              ToastificationType.error,
+            );
           }
         } else {
           setState(() {
             _isLoadingProfile = false;
           });
-          _showToast('Not authenticated. Please log in again.', ToastificationType.error);
+          _showToast(
+            'Not authenticated. Please log in again.',
+            ToastificationType.error,
+          );
         }
       }
     } catch (e, stackTrace) {
@@ -332,17 +351,19 @@ class _ParentProfileScreenState extends State<ParentProfileScreen>
   Future<void> _migrateOrphanedChildren() async {
     try {
       print('🔄 Starting automatic migration of orphaned children...');
-      
+
       // Find all children in top-level Children collection
       // We need to check which ones belong to this parent by checking the parent reference
       final allChildren = await FirebaseFirestore.instance
           .collection('Children')
           .get();
-      
-      print('Found ${allChildren.docs.length} children in top-level collection');
+
+      print(
+        'Found ${allChildren.docs.length} children in top-level collection',
+      );
       print('Current parent UID: $_uid');
       print('Current parent path: Parents/$_uid');
-      
+
       int migratedCount = 0;
       final parentRef = FirebaseFirestore.instance
           .collection('Parents')
@@ -350,58 +371,67 @@ class _ParentProfileScreenState extends State<ParentProfileScreen>
       final parentChildrenRef = parentRef.collection('Children');
       final expectedParentPath = 'Parents/$_uid';
       final expectedParentPathWithSlash = '/Parents/$_uid';
-      
+
       for (var childDoc in allChildren.docs) {
         final childData = childDoc.data();
         final childId = childDoc.id;
         final username = childData['username'] ?? 'N/A';
-        
+
         print('   Checking child: $childId (username: $username)');
-        
+
         // Check if this child belongs to the current parent
         final parentField = childData['parent'];
         bool belongsToThisParent = false;
-        
+
         if (parentField == null) {
           print('   ⚠️ Child has no parent field, skipping');
           continue;
         }
-        
+
         if (parentField is DocumentReference) {
           final parentPath = parentField.path;
-          belongsToThisParent = parentPath == expectedParentPath || parentPath == expectedParentPathWithSlash;
+          belongsToThisParent =
+              parentPath == expectedParentPath ||
+              parentPath == expectedParentPathWithSlash;
           print('   Parent reference (DocumentReference): $parentPath');
         } else if (parentField is String) {
           final parentPath = parentField.trim();
           // Check multiple possible formats
-          belongsToThisParent = 
+          belongsToThisParent =
               parentPath == expectedParentPath ||
               parentPath == expectedParentPathWithSlash ||
               parentPath.contains(_uid) ||
               parentPath.endsWith('/$_uid');
           print('   Parent reference (String): "$parentPath"');
         } else {
-          print('   ⚠️ Unexpected parent field type: ${parentField.runtimeType}');
+          print(
+            '   ⚠️ Unexpected parent field type: ${parentField.runtimeType}',
+          );
         }
-        
+
         print('   → Belongs to this parent: $belongsToThisParent');
-        
+
         if (!belongsToThisParent) {
           continue; // Skip children that don't belong to this parent
         }
-        
+
         // Check if child already exists in parent subcollection
-        final existingInSubcollection = await parentChildrenRef.doc(childId).get();
-        
+        final existingInSubcollection = await parentChildrenRef
+            .doc(childId)
+            .get();
+
         if (!existingInSubcollection.exists) {
-          print('📦 Migrating child: $childId (username: ${childData['username']})');
-          
+          print(
+            '📦 Migrating child: $childId (username: ${childData['username']})',
+          );
+
           // Copy child data to parent subcollection
           // Map the data from top-level collection format to subcollection format
           final migratedData = {
             'firstName': childData['firstName'] ?? '',
             'username': childData['username'] ?? '',
-            'username_lc': (childData['username'] as String?)?.toLowerCase() ?? '',
+            'username_lc':
+                (childData['username'] as String?)?.toLowerCase() ?? '',
             'email': (childData['email'] as String?)?.toLowerCase() ?? '',
             'active': true,
             'role': 'child',
@@ -413,19 +443,24 @@ class _ParentProfileScreenState extends State<ParentProfileScreen>
             // Note: pin_hash and pin_salt won't be in top-level collection
             // This is okay - existing Firebase Auth account will work for login
           };
-          
+
           await parentChildrenRef.doc(childId).set(migratedData);
           migratedCount++;
-          print('✅ Migrated child $childId (username: ${childData['username']})');
+          print(
+            '✅ Migrated child $childId (username: ${childData['username']})',
+          );
         } else {
           print('⏭️ Child $childId already exists in subcollection, skipping');
         }
       }
-      
+
       if (migratedCount > 0) {
         print('✅ Migration complete: $migratedCount children migrated');
         // Show a subtle notification that children were migrated
-        _showToast('Migrated $migratedCount child account(s) for login', ToastificationType.success);
+        _showToast(
+          'Migrated $migratedCount child account(s) for login',
+          ToastificationType.success,
+        );
       } else {
         print('✅ No children needed migration');
       }
@@ -457,7 +492,12 @@ class _ParentProfileScreenState extends State<ParentProfileScreen>
         );
         break;
       case 2:
-        _showToast('Wishlist coming soon', ToastificationType.info);
+        Navigator.pushReplacement(
+          context,
+          MaterialPageRoute(
+            builder: (_) => ParentWishlistScreen(parentId: _uid),
+          ),
+        );
         break;
       case 3:
         Navigator.pushReplacement(
@@ -1407,13 +1447,15 @@ class _ParentProfileScreenState extends State<ParentProfileScreen>
                         if (currentUser == null) {
                           ScaffoldMessenger.of(context).showSnackBar(
                             const SnackBar(
-                              content: Text('Please log in again to add a child'),
+                              content: Text(
+                                'Please log in again to add a child',
+                              ),
                               duration: Duration(seconds: 2),
                             ),
                           );
                           return;
                         }
-                        
+
                         print(
                           '=== NAVIGATING TO SETUP CHILD SCREEN (Add Button) ===',
                         );
@@ -1431,7 +1473,9 @@ class _ParentProfileScreenState extends State<ParentProfileScreen>
                         );
                         // Force refresh of children list when returning from child creation
                         if (mounted) {
-                          print('Refreshing children listener after returning from setup...');
+                          print(
+                            'Refreshing children listener after returning from setup...',
+                          );
                           _setupChildrenListener(); // Always refresh to ensure new child appears
                         }
                       },
@@ -1711,7 +1755,7 @@ class _ParentProfileScreenState extends State<ParentProfileScreen>
                     );
                     return;
                   }
-                  
+
                   print(
                     '=== NAVIGATING TO SETUP CHILD SCREEN (Empty State) ===',
                   );
@@ -1729,7 +1773,9 @@ class _ParentProfileScreenState extends State<ParentProfileScreen>
                   );
                   // Force refresh of children list when returning from child creation
                   if (mounted) {
-                    print('Refreshing children listener after returning from setup...');
+                    print(
+                      'Refreshing children listener after returning from setup...',
+                    );
                     _setupChildrenListener(); // Always refresh to ensure new child appears
                   }
                 },
@@ -2204,4 +2250,3 @@ class _ParentProfileScreenState extends State<ParentProfileScreen>
     );
   }
 }
-
