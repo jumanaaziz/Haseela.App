@@ -251,19 +251,6 @@ class _SetupChildScreenState extends State<SetupChildScreen> {
 
     final batch = FirebaseFirestore.instance.batch();
 
-    // 1️⃣ Tasks — create an example placeholder (or leave empty if preferred)
-    final taskRef = childRef.collection('Tasks').doc(); // auto ID
-    batch.set(taskRef, {
-      'allowance': 0,
-      'assignedBy': parentRef,
-      'completedImagePath': '',
-      'createdAt': FieldValue.serverTimestamp(),
-      'dueDate': null,
-      'priority': 'normal',
-      'status': 'new',
-      'taskName': 'Example Task',
-    });
-
     // 2️⃣ Transaction — example placeholder
     final transactionRef = childRef.collection('Transaction').doc();
     batch.set(transactionRef, {
