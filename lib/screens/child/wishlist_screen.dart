@@ -396,41 +396,42 @@ class _WishlistScreenState extends State<WishlistScreen>
         final items = snapshot.data ?? [];
 
         if (items.isEmpty) {
-          return Center(
-            child: Column(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                // Fun animated empty state
-                Container(
-                  padding: EdgeInsets.all(40.w),
-                  decoration: BoxDecoration(
-                    gradient: LinearGradient(
-                      begin: Alignment.topLeft,
-                      end: Alignment.bottomRight,
-                      colors: [
-                        const Color(0xFF643FDB).withOpacity(0.1),
-                        const Color(0xFF8B5CF6).withOpacity(0.1),
-                      ],
+          return SingleChildScrollView(
+            physics: const AlwaysScrollableScrollPhysics(),
+            child: Padding(
+              padding: EdgeInsets.symmetric(horizontal: 24.w, vertical: 40.h),
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  // Fun animated empty state
+                  Container(
+                    padding: EdgeInsets.all(40.w),
+                    decoration: BoxDecoration(
+                      gradient: LinearGradient(
+                        begin: Alignment.topLeft,
+                        end: Alignment.bottomRight,
+                        colors: [
+                          const Color(0xFF643FDB).withOpacity(0.1),
+                          const Color(0xFF8B5CF6).withOpacity(0.1),
+                        ],
+                      ),
+                      shape: BoxShape.circle,
                     ),
-                    shape: BoxShape.circle,
+                    child: Text('⭐', style: TextStyle(fontSize: 80.sp)),
                   ),
-                  child: Text('⭐', style: TextStyle(fontSize: 80.sp)),
-                ),
-                SizedBox(height: 24.h),
-                Text(
-                  'Your Dream List Awaits! 🌟',
-                  style: TextStyle(
-                    fontSize: 22.sp,
-                    fontWeight: FontWeight.bold,
-                    color: const Color(0xFF1C1243),
-                    fontFamily: 'SF Pro Text',
+                  SizedBox(height: 24.h),
+                  Text(
+                    'Your Dream List Awaits! 🌟',
+                    style: TextStyle(
+                      fontSize: 22.sp,
+                      fontWeight: FontWeight.bold,
+                      color: const Color(0xFF1C1243),
+                      fontFamily: 'SF Pro Text',
+                    ),
+                    textAlign: TextAlign.center,
                   ),
-                  textAlign: TextAlign.center,
-                ),
-                SizedBox(height: 12.h),
-                Padding(
-                  padding: EdgeInsets.symmetric(horizontal: 40.w),
-                  child: Text(
+                  SizedBox(height: 12.h),
+                  Text(
                     'Start adding items you want to save up for!\nEvery completed task brings you closer 🎯',
                     style: TextStyle(
                       fontSize: 15.sp,
@@ -440,51 +441,9 @@ class _WishlistScreenState extends State<WishlistScreen>
                     ),
                     textAlign: TextAlign.center,
                   ),
-                ),
-                SizedBox(height: 24.h),
-                Container(
-                  decoration: BoxDecoration(
-                    gradient: LinearGradient(
-                      colors: [
-                        const Color(0xFF643FDB),
-                        const Color(0xFF8B5CF6),
-                      ],
-                    ),
-                    borderRadius: BorderRadius.circular(30.r),
-                    boxShadow: [
-                      BoxShadow(
-                        color: const Color(0xFF643FDB).withOpacity(0.3),
-                        blurRadius: 20.r,
-                        offset: Offset(0, 10.h),
-                      ),
-                    ],
-                  ),
-                  child: ElevatedButton.icon(
-                    onPressed: () => _showAddItemDialog(),
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: Colors.transparent,
-                      foregroundColor: Colors.white,
-                      shadowColor: Colors.transparent,
-                      padding: EdgeInsets.symmetric(
-                        horizontal: 32.w,
-                        vertical: 16.h,
-                      ),
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(30.r),
-                      ),
-                    ),
-                    icon: Icon(Icons.add_circle_outline, size: 24.sp),
-                    label: Text(
-                      'Add Your First Wish',
-                      style: TextStyle(
-                        fontSize: 16.sp,
-                        fontWeight: FontWeight.bold,
-                        fontFamily: 'SF Pro Text',
-                      ),
-                    ),
-                  ),
-                ),
-              ],
+                  SizedBox(height: 32.h),
+                ],
+              ),
             ),
           );
         }
