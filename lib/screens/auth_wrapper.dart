@@ -5,6 +5,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'splash/splash_screen.dart';
 import 'splash/launch_screen_old.dart';
 import 'parent/parent_profile_screen.dart';
+import 'child/child_home_screen.dart';
 import 'child_main_wrapper.dart';
 
 // ✅ Simple Session Service to store role + IDs globally
@@ -30,39 +31,6 @@ final session = SessionService();
 class AuthWrapper extends StatelessWidget {
   const AuthWrapper({super.key});
 
-  /// Search for child user in Parents/{parentId}/Children/{childId}
-  /// Returns [parentId, childId] if found, empty list otherwise
-  Future<List<String>> _findChildInParents(String uid) async {
-    try {
-      // Get all parent documents
-      final parentsSnapshot = await FirebaseFirestore.instance
-          .collection('Parents')
-          .get();
-
-      // Search through each parent's children
-      for (var parentDoc in parentsSnapshot.docs) {
-        final parentId = parentDoc.id;
-        final childDoc = await FirebaseFirestore.instance
-            .collection('Parents')
-            .doc(parentId)
-            .collection('Children')
-            .doc(uid)
-            .get();
-
-        if (childDoc.exists) {
-          print('AuthWrapper: Found child $uid under parent $parentId');
-          return [parentId, uid];
-        }
-      }
-
-      print('AuthWrapper: Child $uid not found in any parent\'s children');
-      return [];
-    } catch (e) {
-      print('AuthWrapper: Error searching for child: $e');
-      return [];
-    }
-  }
-
   @override
   Widget build(BuildContext context) {
     return StreamBuilder<User?>(
@@ -72,53 +40,52 @@ class AuthWrapper extends StatelessWidget {
         print('AuthWrapper: Has data: ${snapshot.hasData}');
         print('AuthWrapper: Has error: ${snapshot.hasError}');
 
-        // 🕓 1️⃣ Still waiting for Firebase to settle
+        // 1️⃣ Still checking → Splash screen
         if (snapshot.connectionState == ConnectionState.waiting) {
           return const SplashScreen();
         }
 
-        // ⚠️ 2️⃣ If error
+        // 2️⃣ If error → Launch screen
         if (snapshot.hasError) {
           session.clear();
           return const LaunchScreenOld();
         }
 
-        // 🧩 3️⃣ Handle user null carefully (transient null protection)
-        final user = snapshot.data;
-        if (user == null) {
+        // 3️⃣ If user is authenticated → Check role in Firestore
+        if (snapshot.hasData && snapshot.data != null) {
+          final user = snapshot.data!;
           print(
-            'AuthWrapper: ⚠️ No authenticated user yet (might be transient)',
+            'AuthWrapper: User authenticated. Checking role for ${user.uid}',
           );
-          // Don’t immediately clear session; wait a brief moment
-          return const SplashScreen();
-        }
 
-        print('AuthWrapper: ✅ Authenticated as ${user.uid} — checking role...');
+          return FutureBuilder<DocumentSnapshot>(
+            future: FirebaseFirestore.instance
+                .collection('Users')
+                .doc(user.uid)
+                .get(),
+            builder: (context, userSnapshot) {
+              if (userSnapshot.connectionState == ConnectionState.waiting) {
+                return const SplashScreen();
+              }
 
-        // 🔍 4️⃣ Try to find user in Users collection first (for parents/new format)
-        // If not found, search for child in Parents/{parentId}/Children/{childId}
-        return FutureBuilder<DocumentSnapshot?>(
-          future: FirebaseFirestore.instance
-              .collection('Users')
-              .doc(user.uid)
-              .get()
-              .then((doc) => doc.exists ? doc : null)
-              .catchError((_) => null),
-          builder: (context, userSnapshot) {
-            if (userSnapshot.connectionState == ConnectionState.waiting) {
-              return const SplashScreen();
-            }
+              if (userSnapshot.hasError ||
+                  !userSnapshot.hasData ||
+                  !userSnapshot.data!.exists) {
+                print('AuthWrapper: Error fetching role or user doc missing');
+                session.clear();
+                return const LaunchScreenOld();
+              }
 
-            // If found in Users collection, use it
-            if (userSnapshot.hasData && userSnapshot.data != null && userSnapshot.data!.exists) {
               final data = userSnapshot.data!.data() as Map<String, dynamic>;
               final role = data['role'] as String?;
-              print('AuthWrapper: Found in Users collection, Role = $role');
+              print('AuthWrapper: Role = $role');
 
               if (role == 'parent') {
+                // ✅ Store role globally
                 session.role = 'parent';
                 session.parentId = user.uid;
                 session.childId = null;
+
                 return const ParentProfileScreen();
               } else if (role == 'child') {
                 final parentId = data['parentId'];
@@ -127,41 +94,22 @@ class AuthWrapper extends StatelessWidget {
                 session.role = 'child';
                 session.parentId = parentId;
                 session.childId = childId;
-                print('AuthWrapper: Child found in Users - parentId: $parentId, childId: $childId');
+
+                // ⬇️ send child to the *wrapper*, not HomeScreen
                 return ChildMainWrapper(parentId: parentId, childId: childId);
-              }
-            }
-
-            // If not in Users, search for child in Parents collections
-            print('AuthWrapper: Not in Users collection, searching for child in Parents...');
-            return FutureBuilder<List<String>>(
-              future: _findChildInParents(user.uid),
-              builder: (context, childSearchSnapshot) {
-                if (childSearchSnapshot.connectionState == ConnectionState.waiting) {
-                  return const SplashScreen();
-                }
-
-                if (childSearchSnapshot.hasData && childSearchSnapshot.data != null) {
-                  final result = childSearchSnapshot.data!;
-                  if (result.length == 2) {
-                    final parentId = result[0];
-                    final childId = result[1];
-                    print('AuthWrapper: ✅ Child found! parentId: $parentId, childId: $childId');
-                    session.role = 'child';
-                    session.parentId = parentId;
-                    session.childId = childId;
-                    return ChildMainWrapper(parentId: parentId, childId: childId);
-                  }
-                }
-
-                // Not found anywhere
-                print('AuthWrapper: ⚠️ User not found in Users or as child in Parents');
+              } else {
+                print('AuthWrapper: Unknown role, redirecting to LaunchScreen');
                 session.clear();
                 return const LaunchScreenOld();
-              },
-            );
-          },
-        );
+              }
+            },
+          );
+        }
+
+        // 4️⃣ If not authenticated → Launch screen (login/signup)
+        print('AuthWrapper: No user, showing LaunchScreen');
+        session.clear();
+        return const LaunchScreenOld();
       },
     );
   }

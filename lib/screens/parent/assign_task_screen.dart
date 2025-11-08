@@ -66,7 +66,7 @@ class _AssignTaskScreenState extends State<AssignTaskScreen> {
     try {
       print('=== FETCHING CHILDREN FOR ASSIGN TASK ===');
       print('Parent UID: $_uid');
-      
+
       final snap = await FirebaseFirestore.instance
           .collection("Parents")
           .doc(_uid) // ✅ dynamic parent
@@ -74,11 +74,13 @@ class _AssignTaskScreenState extends State<AssignTaskScreen> {
           .get();
 
       print('Children snapshot size: ${snap.docs.length}');
-      
+
       final allChildren = snap.docs
           .map((doc) {
             final data = doc.data();
-            print('Child doc ${doc.id}: firstName=${data['firstName']}, data=$data');
+            print(
+              'Child doc ${doc.id}: firstName=${data['firstName']}, data=$data',
+            );
             try {
               return ChildOption.fromFirestore(doc.id, data);
             } catch (e) {
@@ -444,7 +446,9 @@ class _AssignTaskScreenState extends State<AssignTaskScreen> {
                             child: Material(
                               color: Colors.transparent,
                               child: InkWell(
-                                onTap: () => setState(() => _isChallengeTask = !_isChallengeTask),
+                                onTap: () => setState(
+                                  () => _isChallengeTask = !_isChallengeTask,
+                                ),
                                 borderRadius: BorderRadius.circular(12.r),
                                 child: Container(
                                   padding: EdgeInsets.all(16.w),
@@ -457,7 +461,9 @@ class _AssignTaskScreenState extends State<AssignTaskScreen> {
                                           color: _isChallengeTask
                                               ? const Color(0xFF7C3AED)
                                               : Colors.white,
-                                          borderRadius: BorderRadius.circular(6.r),
+                                          borderRadius: BorderRadius.circular(
+                                            6.r,
+                                          ),
                                           border: Border.all(
                                             color: _isChallengeTask
                                                 ? const Color(0xFF7C3AED)
@@ -476,7 +482,8 @@ class _AssignTaskScreenState extends State<AssignTaskScreen> {
                                       SizedBox(width: 12.w),
                                       Expanded(
                                         child: Column(
-                                          crossAxisAlignment: CrossAxisAlignment.start,
+                                          crossAxisAlignment:
+                                              CrossAxisAlignment.start,
                                           children: [
                                             Text(
                                               'Make it a challenge task',
@@ -646,21 +653,21 @@ class _AssignTaskScreenState extends State<AssignTaskScreen> {
       if (_isChallengeTask) {
         // If it's a challenge task, assign it to ALL children
         final childrenSnapshot = await parentRef.collection('Children').get();
-        
+
         if (childrenSnapshot.docs.isEmpty) {
           _showError("No children found. Please add a child first.");
           return;
         }
 
         final batch = FirebaseFirestore.instance.batch();
-        
+
         for (var childDoc in childrenSnapshot.docs) {
           final taskDoc = parentRef
               .collection('Children')
               .doc(childDoc.id)
               .collection('Tasks')
               .doc();
-          
+
           batch.set(taskDoc, taskData);
         }
 

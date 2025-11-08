@@ -197,14 +197,7 @@ class _HaseelaLessonsOverviewScreenState
       return;
     }
 
-    Navigator.pushAndRemoveUntil(
-      context,
-      MaterialPageRoute(
-        builder: (context) =>
-            HomeScreen(parentId: parentId!, childId: widget.childId),
-      ),
-      (route) => false, // Remove all previous routes
-    );
+    Navigator.pop(context);
   }
 
   Future<String?> _getParentIdFromChildId() async {

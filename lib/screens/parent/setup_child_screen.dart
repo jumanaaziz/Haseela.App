@@ -1,12 +1,13 @@
 import 'dart:convert';
 import 'dart:math';
-
+import 'package:firebase_core/firebase_core.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_screenutil/flutter_screenutil.dart';
 import 'package:crypto/crypto.dart';
 import 'package:toastification/toastification.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:firebase_core/firebase_core.dart';
 
 class SetupChildScreen extends StatefulWidget {
   final String parentId;
@@ -94,16 +95,37 @@ class _SetupChildScreenState extends State<SetupChildScreen> {
 
   Future<String?> _createChildAuthAccount(String email, String pin) async {
     try {
-      UserCredential userCredential = await FirebaseAuth.instance
-          .createUserWithEmailAndPassword(email: email, password: pin);
+      // ✅ Use a secondary Firebase app to prevent signing out the parent
+      final secondaryApp = await Firebase.initializeApp(
+        name: 'secondary',
+        options: Firebase.app().options,
+      );
 
-      return userCredential.user?.uid; // ✅ Return Firebase UID
+      final secondaryAuth = FirebaseAuth.instanceFor(app: secondaryApp);
+
+      // Create the child user in the secondary app
+      final userCredential = await secondaryAuth.createUserWithEmailAndPassword(
+        email: email,
+        password: pin,
+      );
+      final childUid = userCredential.user?.uid;
+
+      // Optional: sign out the secondary instance and delete the app
+      await secondaryAuth.signOut();
+      await secondaryApp.delete();
+
+      print('✅ Child account created via secondary app: $childUid');
+      return childUid;
     } on FirebaseAuthException catch (e) {
-      print('Error creating child Firebase Auth account: $e');
+      print('❌ Error creating child Firebase Auth account: $e');
       _showToast(
         'Failed to create child account: ${e.message}',
         ToastificationType.error,
       );
+      return null;
+    } catch (e) {
+      print('❌ Unexpected error creating child: $e');
+      _showToast('Unexpected error: $e', ToastificationType.error);
       return null;
     }
   }
@@ -229,19 +251,6 @@ class _SetupChildScreenState extends State<SetupChildScreen> {
 
     final batch = FirebaseFirestore.instance.batch();
 
-    // 1️⃣ Tasks — create an example placeholder (or leave empty if preferred)
-    final taskRef = childRef.collection('Tasks').doc(); // auto ID
-    batch.set(taskRef, {
-      'allowance': 0,
-      'assignedBy': parentRef,
-      'completedImagePath': '',
-      'createdAt': FieldValue.serverTimestamp(),
-      'dueDate': null,
-      'priority': 'normal',
-      'status': 'new',
-      'taskName': 'Example Task',
-    });
-
     // 2️⃣ Transaction — example placeholder
     final transactionRef = childRef.collection('Transaction').doc();
     batch.set(transactionRef, {
@@ -256,7 +265,27 @@ class _SetupChildScreenState extends State<SetupChildScreen> {
       'userID': childUid,
     });
 
-    // 🚫 Removed the Wallet creation block here.
+    // 3️⃣ Wallet — initialize starting balances
+    final walletRef = childRef.collection('Wallet').doc('wallet001');
+    batch.set(walletRef, {
+      'createdAt': FieldValue.serverTimestamp(),
+      'id': 'wallet001',
+      'savingBalance': 0,
+      'spendingBalance': 0,
+      'totalBalance': 0,
+      'updatedAt': FieldValue.serverTimestamp(),
+      'userId': childUid,
+    });
+
+    // 4️⃣ Wishlist — example placeholder
+    final wishlistRef = childRef.collection('Wishlist').doc();
+    batch.set(wishlistRef, {
+      'createdAt': FieldValue.serverTimestamp(),
+      'itemName': 'Example Item',
+      'itemPrice': 0,
+      'progress': 0,
+      'statuss': 'pending', // 👈 matches your original field name exactly
+    });
 
     await batch.commit();
   }
