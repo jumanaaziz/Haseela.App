@@ -277,16 +277,6 @@ class _SetupChildScreenState extends State<SetupChildScreen> {
       'userId': childUid,
     });
 
-    // 4️⃣ Wishlist — example placeholder
-    final wishlistRef = childRef.collection('Wishlist').doc();
-    batch.set(wishlistRef, {
-      'createdAt': FieldValue.serverTimestamp(),
-      'itemName': 'Example Item',
-      'itemPrice': 0,
-      'progress': 0,
-      'statuss': 'pending', // 👈 matches your original field name exactly
-    });
-
     await batch.commit();
   }
 
