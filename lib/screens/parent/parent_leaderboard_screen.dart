@@ -7,6 +7,22 @@ import 'parent_profile_screen.dart';
 import 'task_management_screen.dart';
 import 'parent_wishlist_screen.dart';
 
+class ParentLeaderboardEntry {
+  final String childId;
+  final String childName;
+  final String? childAvatar;
+  final int completedCount;
+  final DateTime earliestCompletion;
+
+  ParentLeaderboardEntry({
+    required this.childId,
+    required this.childName,
+    this.childAvatar,
+    required this.completedCount,
+    required this.earliestCompletion,
+  });
+}
+
 class ParentLeaderboardScreen extends StatefulWidget {
   const ParentLeaderboardScreen({super.key});
 
@@ -20,8 +36,8 @@ class _ParentLeaderboardScreenState extends State<ParentLeaderboardScreen> {
   String get _uid => FirebaseAuth.instance.currentUser!.uid;
 
   bool _isWeeklyView = true; // Toggle between Weekly and Monthly
-  List<LeaderboardEntry> _weeklyEntries = [];
-  List<LeaderboardEntry> _monthlyEntries = [];
+  List<ParentLeaderboardEntry> _weeklyEntries = [];
+  List<ParentLeaderboardEntry> _monthlyEntries = [];
   bool _isLoadingWeekly = true;
   bool _isLoadingMonthly = true;
   bool _isMonthDropdownOpen = false; // Track dropdown state
@@ -153,7 +169,7 @@ class _ParentLeaderboardScreenState extends State<ParentLeaderboardScreen> {
         return;
       }
 
-      final Map<String, LeaderboardEntry> entriesMap = {};
+      final Map<String, ParentLeaderboardEntry> entriesMap = {};
 
       // For each child, get their completed challenge tasks from last 7 days
       for (var childDoc in childrenSnapshot.docs) {
@@ -235,7 +251,7 @@ class _ParentLeaderboardScreenState extends State<ParentLeaderboardScreen> {
         print(
           '   ✓ Adding entry: $childName with $completedCount approved completion(s)',
         );
-        entriesMap[childId] = LeaderboardEntry(
+        entriesMap[childId] = ParentLeaderboardEntry(
           childId: childId,
           childName: childName,
           childAvatar: childAvatar,
@@ -248,9 +264,13 @@ class _ParentLeaderboardScreenState extends State<ParentLeaderboardScreen> {
       // 1. Children with completed tasks (for top 3)
       // 2. All children (for the full list below)
       final allEntries = entriesMap.values.toList();
-      final entriesWithTasks = allEntries.where((e) => e.completedCount > 0).toList();
-      final entriesWithZeroTasks = allEntries.where((e) => e.completedCount == 0).toList();
-      
+      final entriesWithTasks = allEntries
+          .where((e) => e.completedCount > 0)
+          .toList();
+      final entriesWithZeroTasks = allEntries
+          .where((e) => e.completedCount == 0)
+          .toList();
+
       // Sort children with tasks by count first, then by completion time (earliest = higher rank)
       // Ranking is based on when child completed (completedDate), NOT when parent approved
       if (entriesWithTasks.isNotEmpty) {
@@ -264,14 +284,19 @@ class _ParentLeaderboardScreenState extends State<ParentLeaderboardScreen> {
           return a.earliestCompletion.compareTo(b.earliestCompletion);
         });
       }
-      
+
       // Sort children with 0 tasks alphabetically
-      entriesWithZeroTasks.sort((a, b) => a.childName.toLowerCase().compareTo(b.childName.toLowerCase()));
-      
+      entriesWithZeroTasks.sort(
+        (a, b) =>
+            a.childName.toLowerCase().compareTo(b.childName.toLowerCase()),
+      );
+
       // Combine: entries with tasks first (for top 3), then entries with 0 tasks (for list)
       final sortedEntries = [...entriesWithTasks, ...entriesWithZeroTasks];
 
-      print('✅ Weekly leaderboard loaded: ${sortedEntries.length} entries (${entriesWithTasks.length} with tasks, ${entriesWithZeroTasks.length} with 0 tasks)');
+      print(
+        '✅ Weekly leaderboard loaded: ${sortedEntries.length} entries (${entriesWithTasks.length} with tasks, ${entriesWithZeroTasks.length} with 0 tasks)',
+      );
 
       setState(() {
         _weeklyEntries = sortedEntries;
@@ -386,7 +411,7 @@ class _ParentLeaderboardScreenState extends State<ParentLeaderboardScreen> {
         return;
       }
 
-      final Map<String, LeaderboardEntry> entriesMap = {};
+      final Map<String, ParentLeaderboardEntry> entriesMap = {};
 
       // For each child, get their completed challenge tasks this month
       for (var childDoc in childrenSnapshot.docs) {
@@ -438,7 +463,7 @@ class _ParentLeaderboardScreenState extends State<ParentLeaderboardScreen> {
 
         // Always add entry, even if child has 0 tasks
         // This allows showing all children when challenge exists but no one completed yet
-        entriesMap[childId] = LeaderboardEntry(
+        entriesMap[childId] = ParentLeaderboardEntry(
           childId: childId,
           childName: childName,
           childAvatar: childAvatar,
@@ -451,9 +476,13 @@ class _ParentLeaderboardScreenState extends State<ParentLeaderboardScreen> {
       // 1. Children with completed tasks (for top 3)
       // 2. All children (for the full list below)
       final allEntries = entriesMap.values.toList();
-      final entriesWithTasks = allEntries.where((e) => e.completedCount > 0).toList();
-      final entriesWithZeroTasks = allEntries.where((e) => e.completedCount == 0).toList();
-      
+      final entriesWithTasks = allEntries
+          .where((e) => e.completedCount > 0)
+          .toList();
+      final entriesWithZeroTasks = allEntries
+          .where((e) => e.completedCount == 0)
+          .toList();
+
       // Sort children with tasks by count first, then by completion time (earliest = higher rank)
       // Ranking is based on when child completed (completedDate), NOT when parent approved
       if (entriesWithTasks.isNotEmpty) {
@@ -467,14 +496,19 @@ class _ParentLeaderboardScreenState extends State<ParentLeaderboardScreen> {
           return a.earliestCompletion.compareTo(b.earliestCompletion);
         });
       }
-      
+
       // Sort children with 0 tasks alphabetically
-      entriesWithZeroTasks.sort((a, b) => a.childName.toLowerCase().compareTo(b.childName.toLowerCase()));
-      
+      entriesWithZeroTasks.sort(
+        (a, b) =>
+            a.childName.toLowerCase().compareTo(b.childName.toLowerCase()),
+      );
+
       // Combine: entries with tasks first (for top 3), then entries with 0 tasks (for list)
       final sortedEntries = [...entriesWithTasks, ...entriesWithZeroTasks];
 
-      print('✅ Monthly leaderboard loaded: ${sortedEntries.length} entries (${entriesWithTasks.length} with tasks, ${entriesWithZeroTasks.length} with 0 tasks)');
+      print(
+        '✅ Monthly leaderboard loaded: ${sortedEntries.length} entries (${entriesWithTasks.length} with tasks, ${entriesWithZeroTasks.length} with 0 tasks)',
+      );
 
       setState(() {
         _monthlyEntries = sortedEntries;
@@ -504,7 +538,7 @@ class _ParentLeaderboardScreenState extends State<ParentLeaderboardScreen> {
         );
         break;
       case 2:
-         Navigator.pushReplacement(
+        Navigator.pushReplacement(
           context,
           MaterialPageRoute(
             builder: (_) => ParentWishlistScreen(parentId: _uid),
@@ -649,53 +683,55 @@ class _ParentLeaderboardScreenState extends State<ParentLeaderboardScreen> {
 
         final hasChallenges = snapshot.data ?? false;
         if (!hasChallenges) {
-      return Padding(
-        padding: EdgeInsets.symmetric(horizontal: 20.w),
-        child: Container(
-          padding: EdgeInsets.all(32.w),
-          decoration: BoxDecoration(
-            color: Colors.white,
-            borderRadius: BorderRadius.circular(16.r),
-            border: Border.all(color: const Color(0xFFE2E8F0), width: 1),
-          ),
-          child: Column(
-            children: [
-              Icon(
-                Icons.emoji_events_outlined,
-                size: 64.sp,
-                color: const Color(0xFF94A3B8),
+          return Padding(
+            padding: EdgeInsets.symmetric(horizontal: 20.w),
+            child: Container(
+              padding: EdgeInsets.all(32.w),
+              decoration: BoxDecoration(
+                color: Colors.white,
+                borderRadius: BorderRadius.circular(16.r),
+                border: Border.all(color: const Color(0xFFE2E8F0), width: 1),
               ),
-              SizedBox(height: 16.h),
-              Text(
-                'No challenge task yet',
-                style: TextStyle(
-                  fontSize: 18.sp,
-                  fontWeight: FontWeight.w600,
-                  color: const Color(0xFF1E293B),
-                ),
+              child: Column(
+                children: [
+                  Icon(
+                    Icons.emoji_events_outlined,
+                    size: 64.sp,
+                    color: const Color(0xFF94A3B8),
+                  ),
+                  SizedBox(height: 16.h),
+                  Text(
+                    'No challenge task yet',
+                    style: TextStyle(
+                      fontSize: 18.sp,
+                      fontWeight: FontWeight.w600,
+                      color: const Color(0xFF1E293B),
+                    ),
+                  ),
+                  SizedBox(height: 8.h),
+                  Text(
+                    'Start a challenge task to see the weekly leaderboard',
+                    textAlign: TextAlign.center,
+                    style: TextStyle(
+                      fontSize: 14.sp,
+                      color: const Color(0xFF64748B),
+                    ),
+                  ),
+                ],
               ),
-              SizedBox(height: 8.h),
-              Text(
-                'Start a challenge task to see the weekly leaderboard',
-                textAlign: TextAlign.center,
-                style: TextStyle(
-                  fontSize: 14.sp,
-                  color: const Color(0xFF64748B),
-                ),
-              ),
-            ],
-          ),
-        ),
-      );
+            ),
+          );
         }
 
         // Don't show "no completions" message here - if challenge exists, show children with 0 tasks
         // The "no challenge task" message is already handled by the FutureBuilder above
 
         // Separate entries: those with tasks (for top 3) and all entries (for list)
-        final entriesWithTasks = _weeklyEntries.where((e) => e.completedCount > 0).toList();
+        final entriesWithTasks = _weeklyEntries
+            .where((e) => e.completedCount > 0)
+            .toList();
         final allEntries = _weeklyEntries; // All entries for the list below
-        
+
         return Padding(
           padding: EdgeInsets.symmetric(horizontal: 20.w),
           child: Column(
@@ -906,9 +942,12 @@ class _ParentLeaderboardScreenState extends State<ParentLeaderboardScreen> {
             // Separate entries: those with tasks (for top 3) and all entries (for list)
             Builder(
               builder: (context) {
-                final entriesWithTasks = _monthlyEntries.where((e) => e.completedCount > 0).toList();
-                final allEntries = _monthlyEntries; // All entries for the list below
-                
+                final entriesWithTasks = _monthlyEntries
+                    .where((e) => e.completedCount > 0)
+                    .toList();
+                final allEntries =
+                    _monthlyEntries; // All entries for the list below
+
                 return Column(
                   children: [
                     // Top 3: Only show children who have completed tasks
@@ -920,13 +959,19 @@ class _ParentLeaderboardScreenState extends State<ParentLeaderboardScreen> {
                       if (entriesWithTasks.isEmpty) ...[
                         ...List.generate(allEntries.length, (index) {
                           final entry = allEntries[index];
-                          return _buildLeaderboardItem(entry: entry, rank: index + 1);
+                          return _buildLeaderboardItem(
+                            entry: entry,
+                            rank: index + 1,
+                          );
                         }),
                       ] else ...[
                         // Show remaining children (those not in top 3)
                         ...List.generate(allEntries.length - 3, (index) {
                           final entry = allEntries[index + 3];
-                          return _buildLeaderboardItem(entry: entry, rank: index + 4);
+                          return _buildLeaderboardItem(
+                            entry: entry,
+                            rank: index + 4,
+                          );
                         }),
                       ],
                     ],
@@ -977,7 +1022,7 @@ class _ParentLeaderboardScreenState extends State<ParentLeaderboardScreen> {
     );
   }
 
-  Widget _buildTopThreeLeaderboard(List<LeaderboardEntry> entries) {
+  Widget _buildTopThreeLeaderboard(List<ParentLeaderboardEntry> entries) {
     // Always show 3 ranks, even if only one child
     final first = entries.isNotEmpty ? entries[0] : null;
     final second = entries.length > 1 ? entries[1] : null;
@@ -1009,7 +1054,9 @@ class _ParentLeaderboardScreenState extends State<ParentLeaderboardScreen> {
                       width: 40.w,
                       height: 40.w,
                       decoration: BoxDecoration(
-                        color: const Color(0xFFC0C0C0), // Always silver color, even when empty
+                        color: const Color(
+                          0xFFC0C0C0,
+                        ), // Always silver color, even when empty
                         shape: BoxShape.circle,
                         border: Border.all(color: Colors.white, width: 2),
                         boxShadow: [
@@ -1037,11 +1084,7 @@ class _ParentLeaderboardScreenState extends State<ParentLeaderboardScreen> {
                         mainAxisAlignment: MainAxisAlignment.center,
                         mainAxisSize: MainAxisSize.min,
                         children: [
-                          Icon(
-                            Icons.star,
-                            color: Colors.white,
-                            size: 14.sp,
-                          ),
+                          Icon(Icons.star, color: Colors.white, size: 14.sp),
                           SizedBox(height: 1.h),
                           Text(
                             '#2',
@@ -1080,25 +1123,39 @@ class _ParentLeaderboardScreenState extends State<ParentLeaderboardScreen> {
                       width: 48.w,
                       height: 48.w,
                       decoration: BoxDecoration(
-                        color: first != null ? Colors.yellow[700]! : Colors.grey[300]!,
+                        color: first != null
+                            ? Colors.yellow[700]!
+                            : Colors.grey[300]!,
                         shape: BoxShape.circle,
                         border: Border.all(color: Colors.white, width: 2),
                         boxShadow: [
                           // LED glow effect - multiple layers for depth
                           BoxShadow(
-                            color: (first != null ? Colors.yellow[700]! : Colors.grey[400]!).withOpacity(0.9),
+                            color:
+                                (first != null
+                                        ? Colors.yellow[700]!
+                                        : Colors.grey[400]!)
+                                    .withOpacity(0.9),
                             blurRadius: 20,
                             spreadRadius: 3,
                             offset: Offset(0, 0),
                           ),
                           BoxShadow(
-                            color: (first != null ? Colors.yellow[600]! : Colors.grey[300]!).withOpacity(0.7),
+                            color:
+                                (first != null
+                                        ? Colors.yellow[600]!
+                                        : Colors.grey[300]!)
+                                    .withOpacity(0.7),
                             blurRadius: 15,
                             spreadRadius: 2,
                             offset: Offset(0, 0),
                           ),
                           BoxShadow(
-                            color: (first != null ? Colors.yellow : Colors.grey[200]!).withOpacity(0.5),
+                            color:
+                                (first != null
+                                        ? Colors.yellow
+                                        : Colors.grey[200]!)
+                                    .withOpacity(0.5),
                             blurRadius: 8,
                             offset: Offset(0, 2),
                           ),
@@ -1108,11 +1165,7 @@ class _ParentLeaderboardScreenState extends State<ParentLeaderboardScreen> {
                         mainAxisAlignment: MainAxisAlignment.center,
                         mainAxisSize: MainAxisSize.min,
                         children: [
-                          Icon(
-                            Icons.star,
-                            color: Colors.white,
-                            size: 16.sp,
-                          ),
+                          Icon(Icons.star, color: Colors.white, size: 16.sp),
                           SizedBox(height: 1.h),
                           Text(
                             '#1',
@@ -1149,7 +1202,9 @@ class _ParentLeaderboardScreenState extends State<ParentLeaderboardScreen> {
                       width: 40.w,
                       height: 40.w,
                       decoration: BoxDecoration(
-                        color: const Color(0xFFCD7F32), // Always bronze color, even when empty
+                        color: const Color(
+                          0xFFCD7F32,
+                        ), // Always bronze color, even when empty
                         shape: BoxShape.circle,
                         border: Border.all(color: Colors.white, width: 2),
                         boxShadow: [
@@ -1177,11 +1232,7 @@ class _ParentLeaderboardScreenState extends State<ParentLeaderboardScreen> {
                         mainAxisAlignment: MainAxisAlignment.center,
                         mainAxisSize: MainAxisSize.min,
                         children: [
-                          Icon(
-                            Icons.star,
-                            color: Colors.white,
-                            size: 14.sp,
-                          ),
+                          Icon(Icons.star, color: Colors.white, size: 14.sp),
                           SizedBox(height: 1.h),
                           Text(
                             '#3',
@@ -1205,7 +1256,7 @@ class _ParentLeaderboardScreenState extends State<ParentLeaderboardScreen> {
   }
 
   Widget _buildTopThreeCard({
-    LeaderboardEntry? entry,
+    ParentLeaderboardEntry? entry,
     required int rank,
     required Color color,
     bool isFirst = false,
@@ -1372,7 +1423,7 @@ class _ParentLeaderboardScreenState extends State<ParentLeaderboardScreen> {
   }
 
   Widget _buildLeaderboardItem({
-    required LeaderboardEntry entry,
+    required ParentLeaderboardEntry entry,
     required int rank,
   }) {
     return Container(
@@ -1461,20 +1512,4 @@ class _ParentLeaderboardScreenState extends State<ParentLeaderboardScreen> {
       ),
     );
   }
-}
-
-class LeaderboardEntry {
-  final String childId;
-  final String childName;
-  final String? childAvatar;
-  final int completedCount;
-  final DateTime earliestCompletion;
-
-  LeaderboardEntry({
-    required this.childId,
-    required this.childName,
-    this.childAvatar,
-    required this.completedCount,
-    required this.earliestCompletion,
-  });
 }
