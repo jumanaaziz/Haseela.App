@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'child/child_home_screen.dart';
 import 'child/child_task_view_screen.dart';
 import 'child/wishlist_screen.dart';
+import 'child/leaderboard/leaderboard_screen.dart';
 import '../../widgets/custom_bottom_nav.dart';
 import 'services/notification_service.dart';
 
@@ -30,28 +31,33 @@ class _ChildMainWrapperState extends State<ChildMainWrapper> {
     print('🎯 ===== ChildMainWrapper.initState START =====');
     // ignore: avoid_print
     print('🎯 parentId: ${widget.parentId}, childId: ${widget.childId}');
-    
+
     // Initialize notifications for the child role (local + FCM + Firestore listener)
     // Use a microtask to ensure widget is fully built
     WidgetsBinding.instance.addPostFrameCallback((_) {
       // ignore: avoid_print
       print('🎯 PostFrameCallback: Starting notification initialization...');
-      _notificationService.initializeForChild(
-        parentId: widget.parentId,
-        childId: widget.childId,
-      ).then((_) {
-        // ignore: avoid_print
-        print('🎯 Notification initialization completed');
-      }).catchError((error, stackTrace) {
-        // ignore: avoid_print
-        print('❌ ===== FAILED TO INITIALIZE NOTIFICATIONS IN WRAPPER =====');
-        // ignore: avoid_print
-        print('❌ Error: $error');
-        // ignore: avoid_print
-        print('❌ Stack: $stackTrace');
-      });
+      _notificationService
+          .initializeForChild(
+            parentId: widget.parentId,
+            childId: widget.childId,
+          )
+          .then((_) {
+            // ignore: avoid_print
+            print('🎯 Notification initialization completed');
+          })
+          .catchError((error, stackTrace) {
+            // ignore: avoid_print
+            print(
+              '❌ ===== FAILED TO INITIALIZE NOTIFICATIONS IN WRAPPER =====',
+            );
+            // ignore: avoid_print
+            print('❌ Error: $error');
+            // ignore: avoid_print
+            print('❌ Stack: $stackTrace');
+          });
     });
-    
+
     // ignore: avoid_print
     print('🎯 ===== ChildMainWrapper.initState END =====');
   }
@@ -68,34 +74,21 @@ class _ChildMainWrapperState extends State<ChildMainWrapper> {
     final home = HomeScreen(
       parentId: widget.parentId,
       childId: widget.childId,
-     // showBottomNav: false, // Don't show bottom nav since wrapper handles it
+      // showBottomNav: false, // Don't show bottom nav since wrapper handles it
     );
     final tasks = ChildTaskViewScreen(
       parentId: widget.parentId,
       childId: widget.childId,
-     // showBottomNav: false, // Don't show bottom nav since wrapper handles it
+      // showBottomNav: false, // Don't show bottom nav since wrapper handles it
     );
     final wishlist = WishlistScreen(
       parentId: widget.parentId,
       childId: widget.childId,
-     // showBottomNav: false, // Don't show bottom nav since wrapper handles it
+      // showBottomNav: false, // Don't show bottom nav since wrapper handles it
     );
-    final leaderboard = Center(
-      child: Column(
-        mainAxisAlignment: MainAxisAlignment.center,
-        children: [
-          Icon(Icons.leaderboard, size: 80, color: Colors.grey.shade400),
-          SizedBox(height: 20),
-          Text(
-            'Leaderboard Coming Soon',
-            style: TextStyle(
-              fontSize: 20,
-              fontWeight: FontWeight.bold,
-              color: Colors.grey.shade600,
-            ),
-          ),
-        ],
-      ),
+    final leaderboard = LeaderboardScreen(
+      parentId: widget.parentId,
+      childId: widget.childId,
     );
 
     return Scaffold(
@@ -104,7 +97,8 @@ class _ChildMainWrapperState extends State<ChildMainWrapper> {
         children: [home, tasks, wishlist, leaderboard],
       ),
       bottomNavigationBar: CustomBottomNavigationBar(
-        currentIndex: _currentIndex, // 0 = Home, 1 = Tasks, 2 = Wishlist, 3 = Leaderboard
+        currentIndex:
+            _currentIndex, // 0 = Home, 1 = Tasks, 2 = Wishlist, 3 = Leaderboard
         onTap: (index) {
           setState(() => _currentIndex = index);
         },

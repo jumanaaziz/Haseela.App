@@ -83,6 +83,7 @@ flutter:
   assets:
     - assets/icons/riyal.png
     - assets/images/logo.png
+    - assets/badges/
 
   # To add assets to your application, add an assets section, like this:
   # assets:
