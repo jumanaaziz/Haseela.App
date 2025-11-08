@@ -2133,14 +2133,6 @@ class _LeaderboardScreenState extends State<LeaderboardScreen> {
       ),
       child: Row(
         children: [
-          IconButton(
-            icon: Icon(
-              Icons.arrow_back,
-              color: const Color(0xFF1C1243),
-              size: 24.sp,
-            ),
-            onPressed: () => Navigator.pop(context),
-          ),
           Expanded(
             child: Text(
               _showMyBadge ? 'My Badge' : 'Leaderboard',
