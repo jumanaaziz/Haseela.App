@@ -393,6 +393,7 @@ class _WishlistScreenState extends State<WishlistScreen>
         final items = snapshot.data ?? [];
 
         if (items.isEmpty) {
+
           return LayoutBuilder(
             builder: (context, constraints) {
               final availableHeight = constraints.maxHeight.isFinite
@@ -502,6 +503,10 @@ class _WishlistScreenState extends State<WishlistScreen>
                 ),
               );
             },
+          );
+        }
+
+
           );
         }
 

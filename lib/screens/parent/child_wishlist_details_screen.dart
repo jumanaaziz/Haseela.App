@@ -1186,116 +1186,74 @@ class _ChildWishlistDetailsScreenState extends State<ChildWishlistDetailsScreen>
       shape: RoundedRectangleBorder(
         borderRadius: BorderRadius.vertical(top: Radius.circular(24.r)),
       ),
-      builder: (context) => Container(
-        decoration: BoxDecoration(
-          color: Colors.white,
-          borderRadius: BorderRadius.vertical(top: Radius.circular(24.r)),
+      builder: (context) => Padding(
+        // ✅ Ensures modal shifts up when keyboard appears
+        padding: EdgeInsets.only(
+          bottom: MediaQuery.of(context).viewInsets.bottom,
         ),
-        padding: EdgeInsets.all(24.w),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            // Handle bar
-            Center(
-              child: Container(
-                width: 40.w,
-                height: 4.h,
-                margin: EdgeInsets.only(bottom: 16.h),
-                decoration: BoxDecoration(
-                  color: Colors.grey[300],
-                  borderRadius: BorderRadius.circular(2.r),
-                ),
-              ),
-            ),
-            // Item Header
-            Row(
+        child: Container(
+          decoration: BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.vertical(top: Radius.circular(24.r)),
+          ),
+          padding: EdgeInsets.all(24.w),
+          child: SingleChildScrollView(
+            keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Container(
-                  padding: EdgeInsets.all(12.w),
-                  decoration: BoxDecoration(
-                    gradient: LinearGradient(
-                      colors: [
-                        const Color(0xFF643FDB).withOpacity(0.2),
-                        const Color(0xFF8B5CF6).withOpacity(0.15),
-                      ],
-                      begin: Alignment.topLeft,
-                      end: Alignment.bottomRight,
+                // Handle bar
+                Center(
+                  child: Container(
+                    width: 40.w,
+                    height: 4.h,
+                    margin: EdgeInsets.only(bottom: 16.h),
+                    decoration: BoxDecoration(
+                      color: Colors.grey[300],
+                      borderRadius: BorderRadius.circular(2.r),
                     ),
-                    shape: BoxShape.circle,
-                  ),
-                  child: Text(emoji, style: TextStyle(fontSize: 32.sp)),
-                ),
-                SizedBox(width: 16.w),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        item.name,
-                        style: TextStyle(
-                          fontSize: 20.sp,
-                          fontWeight: FontWeight.w700,
-                          color: const Color(0xFF1E293B),
-                        ),
-                      ),
-                      SizedBox(height: 4.h),
-                      Text(
-                        '\﷼ ${item.price.toStringAsFixed(2)}',
-                        style: TextStyle(
-                          fontSize: 18.sp,
-                          fontWeight: FontWeight.w600,
-                          color: const Color(0xFF643FDB),
-                        ),
-                      ),
-                    ],
                   ),
                 ),
-              ],
-            ),
-            SizedBox(height: 24.h),
-            // Progress Section
-            if (item.isPurchased) ...[
-              // Purchased Items Section
-              Container(
-                padding: EdgeInsets.all(16.w),
-                decoration: BoxDecoration(
-                  color: const Color(0xFF3B82F6).withOpacity(0.1),
-                  borderRadius: BorderRadius.circular(12.r),
-                  border: Border.all(
-                    color: const Color(0xFF3B82F6).withOpacity(0.3),
-                    width: 1,
-                  ),
-                ),
-                child: Row(
+
+                // Header
+                Row(
                   children: [
                     Container(
-                      padding: EdgeInsets.all(8.w),
+                      padding: EdgeInsets.all(12.w),
                       decoration: BoxDecoration(
-                        color: const Color(0xFF3B82F6),
+                        gradient: LinearGradient(
+                          colors: [
+                            const Color(0xFF643FDB).withOpacity(0.2),
+                            const Color(0xFF8B5CF6).withOpacity(0.15),
+                          ],
+                          begin: Alignment.topLeft,
+                          end: Alignment.bottomRight,
+                        ),
                         shape: BoxShape.circle,
                       ),
-                      child: Text('🛍️', style: TextStyle(fontSize: 20.sp)),
+                      child: Text(emoji, style: TextStyle(fontSize: 32.sp)),
                     ),
-                    SizedBox(width: 12.w),
+                    SizedBox(width: 16.w),
                     Expanded(
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
                           Text(
-                            'This item has been purchased by the child.',
+                            item.name,
                             style: TextStyle(
-                              fontSize: 16.sp,
-                              fontWeight: FontWeight.w600,
-                              color: const Color(0xFF3B82F6),
+                              fontSize: 20.sp,
+                              fontWeight: FontWeight.w700,
+                              color: const Color(0xFF1E293B),
                             ),
                           ),
                           SizedBox(height: 4.h),
                           Text(
-                            'The child has successfully bought this item.',
+                            '\﷼ ${item.price.toStringAsFixed(2)}',
                             style: TextStyle(
-                              fontSize: 14.sp,
-                              color: const Color(0xFF64748B),
+                              fontSize: 18.sp,
+                              fontWeight: FontWeight.w600,
+                              color: const Color(0xFF643FDB),
                             ),
                           ),
                         ],
@@ -1303,171 +1261,229 @@ class _ChildWishlistDetailsScreenState extends State<ChildWishlistDetailsScreen>
                     ),
                   ],
                 ),
-              ),
-            ] else ...[
-              Text(
-                'Progress',
-                style: TextStyle(
-                  fontSize: 16.sp,
-                  fontWeight: FontWeight.w600,
-                  color: const Color(0xFF1E293B),
-                ),
-              ),
-              SizedBox(height: 12.h),
-              Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                children: [
-                  Text(
-                    'Wallet Balance',
-                    style: TextStyle(
-                      fontSize: 14.sp,
-                      color: const Color(0xFF64748B),
-                    ),
-                  ),
-                  Text(
-                    '\﷼ ${(_wallet?.spendingBalance ?? 0.0).toStringAsFixed(2)} / \﷼ ${item.price.toStringAsFixed(2)}',
-                    style: TextStyle(
-                      fontSize: 14.sp,
-                      fontWeight: FontWeight.w600,
-                      color: const Color(0xFF1E293B),
-                    ),
-                  ),
-                ],
-              ),
-              SizedBox(height: 12.h),
-              ClipRRect(
-                borderRadius: BorderRadius.circular(8.r),
-                child: LinearProgressIndicator(
-                  value: progressPercentage.clamp(0.0, 1.0),
-                  minHeight: 10.h,
-                  backgroundColor: const Color(0xFFE2E8F0),
-                  valueColor: AlwaysStoppedAnimation<Color>(
-                    canAfford
-                        ? const Color(0xFF10B981)
-                        : const Color(0xFF643FDB),
-                  ),
-                ),
-              ),
-              SizedBox(height: 8.h),
-              Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                children: [
-                  Text(
-                    '${(progressPercentage.clamp(0.0, 1.0) * 100).toStringAsFixed(0)}% Complete',
-                    style: TextStyle(
-                      fontSize: 12.sp,
-                      color: const Color(0xFF64748B),
-                    ),
-                  ),
+                SizedBox(height: 24.h),
+
+                // Purchased state
+                if (item.isPurchased) ...[
                   Container(
-                    padding: EdgeInsets.symmetric(
-                      horizontal: 12.w,
-                      vertical: 6.h,
-                    ),
+                    padding: EdgeInsets.all(16.w),
                     decoration: BoxDecoration(
-                      color: canAfford
-                          ? const Color(0xFF10B981).withOpacity(0.1)
-                          : const Color(0xFF643FDB).withOpacity(0.1),
-                      borderRadius: BorderRadius.circular(8.r),
-                    ),
-                    child: Text(
-                      canAfford ? 'Affordable!' : 'In Progress',
-                      style: TextStyle(
-                        fontSize: 12.sp,
-                        fontWeight: FontWeight.w600,
-                        color: canAfford
-                            ? const Color(0xFF10B981)
-                            : const Color(0xFF643FDB),
+                      color: const Color(0xFF3B82F6).withOpacity(0.1),
+                      borderRadius: BorderRadius.circular(12.r),
+                      border: Border.all(
+                        color: const Color(0xFF3B82F6).withOpacity(0.3),
                       ),
-                    ),
-                  ),
-                ],
-              ),
-              // Purchase It Button (only show if not purchased)
-              if (!item.isPurchased) ...[
-                SizedBox(height: 16.h),
-                SizedBox(
-                  width: double.infinity,
-                  child: ElevatedButton(
-                    onPressed: canAfford
-                        ? () => _handlePurchaseItem(item)
-                        : () => _showPendingToast(),
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: canAfford
-                          ? const Color(0xFF10B981)
-                          : const Color(0xFF94A3B8),
-                      foregroundColor: Colors.white,
-                      padding: EdgeInsets.symmetric(vertical: 14.h),
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(12.r),
-                      ),
-                      elevation: canAfford ? 2 : 0,
-                      disabledBackgroundColor: const Color(0xFFE2E8F0),
-                      disabledForegroundColor: const Color(0xFF94A3B8),
                     ),
                     child: Row(
-                      mainAxisAlignment: MainAxisAlignment.center,
                       children: [
-                        Icon(Icons.shopping_cart_rounded, size: 20.sp),
-                        SizedBox(width: 8.w),
-                        Text(
-                          'Purchase It',
-                          style: TextStyle(
-                            fontSize: 16.sp,
-                            fontWeight: FontWeight.w600,
+                        Container(
+                          padding: EdgeInsets.all(8.w),
+                          decoration: const BoxDecoration(
+                            color: Color(0xFF3B82F6),
+                            shape: BoxShape.circle,
+                          ),
+                          child: Text('🛍️', style: TextStyle(fontSize: 20.sp)),
+                        ),
+                        SizedBox(width: 12.w),
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                'This item has been purchased by the child.',
+                                style: TextStyle(
+                                  fontSize: 16.sp,
+                                  fontWeight: FontWeight.w600,
+                                  color: const Color(0xFF3B82F6),
+                                ),
+                              ),
+                              SizedBox(height: 4.h),
+                              Text(
+                                'The child has successfully bought this item.',
+                                style: TextStyle(
+                                  fontSize: 14.sp,
+                                  color: const Color(0xFF64748B),
+                                ),
+                              ),
+                            ],
                           ),
                         ),
                       ],
                     ),
                   ),
+                ] else ...[
+                  // Progress section
+                  Text(
+                    'Progress',
+                    style: TextStyle(
+                      fontSize: 16.sp,
+                      fontWeight: FontWeight.w600,
+                      color: const Color(0xFF1E293B),
+                    ),
+                  ),
+                  SizedBox(height: 12.h),
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      Text(
+                        'Wallet Balance',
+                        style: TextStyle(
+                          fontSize: 14.sp,
+                          color: const Color(0xFF64748B),
+                        ),
+                      ),
+                    ],
+                  ),
+                  SizedBox(height: 12.h),
+                  ClipRRect(
+                    borderRadius: BorderRadius.circular(8.r),
+                    child: LinearProgressIndicator(
+                      value: progressPercentage.clamp(0.0, 1.0),
+                      minHeight: 10.h,
+                      backgroundColor: const Color(0xFFE2E8F0),
+                      valueColor: AlwaysStoppedAnimation<Color>(
+                        canAfford
+                            ? const Color(0xFF10B981)
+                            : const Color(0xFF643FDB),
+                      ),
+                    ),
+                  ),
+                  SizedBox(height: 8.h),
+                  // Price + Status Row BELOW the progress bar
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    crossAxisAlignment: CrossAxisAlignment.center,
+                    children: [
+                      // 💰 Price indicator (no flip issues)
+                      Flexible(
+                        child: Directionality(
+                          textDirection: TextDirection.ltr,
+                          child: Text(
+                            'SAR ${(_wallet?.spendingBalance ?? 0.0).toStringAsFixed(2)}'
+                            ' / '
+                            'SAR ${item.price.toStringAsFixed(2)}',
+                            style: TextStyle(
+                              fontSize: 13.sp,
+                              fontWeight: FontWeight.w600,
+                              color: const Color(0xFF1E293B),
+                            ),
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        ),
+                      ),
+
+                      // 🟢 Status indicator (no overflow)
+                      Container(
+                        padding: EdgeInsets.symmetric(
+                          horizontal: 10.w,
+                          vertical: 6.h,
+                        ),
+                        decoration: BoxDecoration(
+                          color: canAfford
+                              ? const Color(0xFF10B981).withOpacity(0.1)
+                              : const Color(0xFF643FDB).withOpacity(0.1),
+                          borderRadius: BorderRadius.circular(8.r),
+                        ),
+                        child: Text(
+                          canAfford ? 'Affordable!' : 'In Progress',
+                          style: TextStyle(
+                            fontSize: 12.sp,
+                            fontWeight: FontWeight.w600,
+                            color: canAfford
+                                ? const Color(0xFF10B981)
+                                : const Color(0xFF643FDB),
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+
+                  // 🟣 Description moved here (before Purchase It)
+                  if (item.description.isNotEmpty) ...[
+                    SizedBox(height: 24.h),
+                    Text(
+                      'Description',
+                      style: TextStyle(
+                        fontSize: 16.sp,
+                        fontWeight: FontWeight.w600,
+                        color: const Color(0xFF1E293B),
+                      ),
+                    ),
+                    SizedBox(height: 8.h),
+                    Text(
+                      item.description,
+                      style: TextStyle(
+                        fontSize: 14.sp,
+                        color: const Color(0xFF64748B),
+                        height: 1.5,
+                      ),
+                    ),
+                  ],
+
+                  // Purchase button below description
+                  SizedBox(height: 24.h),
+                  SizedBox(
+                    width: double.infinity,
+                    child: ElevatedButton(
+                      onPressed: canAfford
+                          ? () => _handlePurchaseItem(item)
+                          : () => _showPendingToast(),
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: canAfford
+                            ? const Color(0xFF10B981)
+                            : const Color(0xFF94A3B8),
+                        foregroundColor: Colors.white,
+                        padding: EdgeInsets.symmetric(vertical: 14.h),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(12.r),
+                        ),
+                        elevation: canAfford ? 2 : 0,
+                      ),
+                      child: Row(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          Icon(Icons.shopping_cart_rounded, size: 20.sp),
+                          SizedBox(width: 8.w),
+                          Text(
+                            'Purchase It',
+                            style: TextStyle(
+                              fontSize: 16.sp,
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                ],
+
+                // Close Button
+                SizedBox(height: 24.h),
+                SizedBox(
+                  width: double.infinity,
+                  child: ElevatedButton(
+                    onPressed: () => Navigator.of(context).pop(),
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: const Color(0xFF643FDB),
+                      foregroundColor: Colors.white,
+                      padding: EdgeInsets.symmetric(vertical: 16.h),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(12.r),
+                      ),
+                      elevation: 0,
+                    ),
+                    child: Text(
+                      'Close',
+                      style: TextStyle(
+                        fontSize: 16.sp,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                  ),
                 ),
               ],
-            ],
-            SizedBox(height: 24.h),
-            if (item.description.isNotEmpty) ...[
-              Text(
-                'Description',
-                style: TextStyle(
-                  fontSize: 16.sp,
-                  fontWeight: FontWeight.w600,
-                  color: const Color(0xFF1E293B),
-                ),
-              ),
-              SizedBox(height: 8.h),
-              Text(
-                item.description,
-                style: TextStyle(
-                  fontSize: 14.sp,
-                  color: const Color(0xFF64748B),
-                  height: 1.5,
-                ),
-              ),
-              SizedBox(height: 24.h),
-            ],
-            // Close Button
-            SizedBox(
-              width: double.infinity,
-              child: ElevatedButton(
-                onPressed: () => Navigator.of(context).pop(),
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: const Color(0xFF643FDB),
-                  foregroundColor: Colors.white,
-                  padding: EdgeInsets.symmetric(vertical: 16.h),
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(12.r),
-                  ),
-                  elevation: 0,
-                ),
-                child: Text(
-                  'Close',
-                  style: TextStyle(
-                    fontSize: 16.sp,
-                    fontWeight: FontWeight.w600,
-                  ),
-                ),
-              ),
             ),
-          ],
+          ),
         ),
       ),
     );

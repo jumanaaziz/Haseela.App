@@ -6,6 +6,12 @@ import '../../widgets/custom_bottom_nav.dart';
 import 'parent_profile_screen.dart';
 import 'task_management_screen.dart';
 import 'parent_wishlist_screen.dart';
+import '../child/leaderboard/leaderboard_entry.dart';
+import '../../models/child.dart';
+import '../../models/wallet.dart';
+import '../../models/transaction.dart' as app_transaction;
+import '../services/haseela_service.dart';
+import '../services/firebase_service.dart';
 
 class ParentLeaderboardEntry {
   final String childId;
@@ -13,6 +19,12 @@ class ParentLeaderboardEntry {
   final String? childAvatar;
   final int completedCount;
   final DateTime earliestCompletion;
+  final double totalSaved;
+  final double totalSpent;
+  final int points;
+  final int currentLevel;
+  final double progressToNextLevel;
+  final List<RecentPurchase> recentPurchases;
 
   ParentLeaderboardEntry({
     required this.childId,
@@ -20,6 +32,12 @@ class ParentLeaderboardEntry {
     this.childAvatar,
     required this.completedCount,
     required this.earliestCompletion,
+    required this.totalSaved,
+    required this.totalSpent,
+    required this.points,
+    required this.currentLevel,
+    required this.progressToNextLevel,
+    required this.recentPurchases,
   });
 }
 
@@ -41,6 +59,11 @@ class _ParentLeaderboardScreenState extends State<ParentLeaderboardScreen> {
   bool _isLoadingWeekly = true;
   bool _isLoadingMonthly = true;
   bool _isMonthDropdownOpen = false; // Track dropdown state
+  bool _isWeeklyChallengeDropdownOpen =
+      false; // Weekly challenge dropdown state
+  bool _isMonthlyChallengeDropdownOpen =
+      false; // Monthly challenge dropdown state
+  final HaseelaService _haseelaService = HaseelaService();
 
   // Month selector for monthly leaderboard - normalize to first day of month at midnight
   DateTime _selectedMonth = DateTime(
@@ -48,6 +71,15 @@ class _ParentLeaderboardScreenState extends State<ParentLeaderboardScreen> {
     DateTime.now().month,
     1,
   );
+
+  List<String> _availableChallenges =
+      []; // List of challenge names for the week
+  String?
+  _selectedChallenge; // Selected challenge name for weekly (null = all challenges)
+  List<String> _availableMonthlyChallenges =
+      []; // List of challenge names for the selected month
+  String?
+  _selectedMonthlyChallenge; // Selected challenge name for monthly (null = all challenges)
 
   @override
   void initState() {
@@ -102,107 +134,72 @@ class _ParentLeaderboardScreenState extends State<ParentLeaderboardScreen> {
     return months[date.month - 1];
   }
 
-  // Check if any challenge tasks exist (not just completed ones)
-  Future<bool> _hasChallengeTasks() async {
-    try {
-      final childrenSnapshot = await FirebaseFirestore.instance
-          .collection("Parents")
-          .doc(_uid)
-          .collection("Children")
-          .get();
+  /// Load weekly leaderboard (matching child leaderboard logic)
+  Future<void> _loadWeeklyLeaderboard() async {
+    setState(() {
+      _isLoadingWeekly = true;
+    });
 
-      for (var childDoc in childrenSnapshot.docs) {
-        final challengeTasks = await FirebaseFirestore.instance
+    try {
+      // Get all children from the same parent
+      final List<Child> children = await _haseelaService.getAllChildren(_uid);
+
+      if (children.isEmpty) {
+        setState(() {
+          _weeklyEntries = [];
+          _availableChallenges = [];
+          _isLoadingWeekly = false;
+        });
+        return;
+      }
+
+      // Calculate challenge completions for the week (matching parent leaderboard logic)
+      final now = DateTime.now();
+      var weekStart = now.subtract(Duration(days: now.weekday - 1));
+      weekStart = DateTime(weekStart.year, weekStart.month, weekStart.day);
+      final Map<String, List<QueryDocumentSnapshot<Map<String, dynamic>>>>
+      childTasksMap = {};
+      final Set<String> challengeNamesSet = {};
+
+      // First, get ALL challenge tasks (completed and not completed) to populate dropdown
+      final allChallengeQueries = children.map((child) async {
+        final allTasksSnapshot = await FirebaseFirestore.instance
             .collection("Parents")
             .doc(_uid)
             .collection("Children")
-            .doc(childDoc.id)
+            .doc(child.id)
             .collection("Tasks")
             .where('isChallenge', isEqualTo: true)
-            .limit(1)
             .get();
 
-        if (challengeTasks.docs.isNotEmpty) {
-          return true; // Found at least one challenge task
+        return {'childId': child.id, 'allTasks': allTasksSnapshot.docs};
+      }).toList();
+
+      final allChallengeResults = await Future.wait(allChallengeQueries);
+      for (final result in allChallengeResults) {
+        final allTasks =
+            result['allTasks']
+                as List<QueryDocumentSnapshot<Map<String, dynamic>>>;
+        for (final taskDoc in allTasks) {
+          final taskName = taskDoc.data()['taskName'] as String? ?? '';
+          if (taskName.isNotEmpty) {
+            challengeNamesSet.add(taskName);
+          }
         }
       }
-      return false; // No challenge tasks found
-    } catch (e) {
-      print('Error checking for challenge tasks: $e');
-      return false;
-    }
-  }
 
-  /// Load weekly leaderboard (last 7 days, sorted by count then speed)
-  Future<void> _loadWeeklyLeaderboard() async {
-    setState(() => _isLoadingWeekly = true);
-
-    try {
-      // First check if any challenge tasks exist
-      final hasChallenges = await _hasChallengeTasks();
-      if (!hasChallenges) {
-        setState(() {
-          _weeklyEntries = [];
-          _isLoadingWeekly = false;
-        });
-        return;
-      }
-
-      // Get start of current week (last 7 days)
-      final now = DateTime.now();
-      final weekStart = now.subtract(const Duration(days: 7));
-
-      print('🔍 Loading weekly leaderboard from: $weekStart to $now');
-
-      // Get all children
-      final childrenSnapshot = await FirebaseFirestore.instance
-          .collection("Parents")
-          .doc(_uid)
-          .collection("Children")
-          .get();
-
-      if (childrenSnapshot.docs.isEmpty) {
-        setState(() {
-          _weeklyEntries = [];
-          _isLoadingWeekly = false;
-        });
-        return;
-      }
-
-      final Map<String, ParentLeaderboardEntry> entriesMap = {};
-
-      // For each child, get their completed challenge tasks from last 7 days
-      for (var childDoc in childrenSnapshot.docs) {
-        final childData = childDoc.data() as Map<String, dynamic>?;
-        final childId = childDoc.id;
-        final childName = childData?['firstName'] ?? 'Unknown';
-        final childAvatar = childData?['avatar'] as String?;
-
-        print('   Checking child: $childId ($childName)');
-
-        // Get ALL challenge tasks first to debug
-        final allChallengeTasks = await FirebaseFirestore.instance
+      // Then, get completed tasks (pending or done) for leaderboard calculations
+      // pending = child completed, waiting for approval
+      // done = parent approved
+      final taskQueries = children.map((child) async {
+        final completedTasksSnapshot = await FirebaseFirestore.instance
             .collection("Parents")
             .doc(_uid)
             .collection("Children")
-            .doc(childId)
+            .doc(child.id)
             .collection("Tasks")
             .where('isChallenge', isEqualTo: true)
-            .get();
-
-        print(
-          '     Found ${allChallengeTasks.docs.length} challenge task(s) total',
-        );
-
-        // Only get approved tasks (status = 'done') - children only appear after parent approval
-        final approvedTasksSnapshot = await FirebaseFirestore.instance
-            .collection("Parents")
-            .doc(_uid)
-            .collection("Children")
-            .doc(childId)
-            .collection("Tasks")
-            .where('isChallenge', isEqualTo: true)
-            .where('status', isEqualTo: 'done')
+            .where('status', whereIn: ['pending', 'done'])
             .get();
 
         print('     - Approved tasks: ${approvedTasksSnapshot.docs.length}');
@@ -308,11 +305,14 @@ class _ParentLeaderboardScreenState extends State<ParentLeaderboardScreen> {
         _isLoadingWeekly = false;
       });
     } catch (e) {
-      print('Error loading weekly leaderboard: $e');
-      setState(() {
-        _weeklyEntries = [];
-        _isLoadingWeekly = false;
-      });
+      print('❌ Error loading weekly leaderboard data: $e');
+      if (mounted) {
+        setState(() {
+          _weeklyEntries = [];
+          _availableChallenges = [];
+          _isLoadingWeekly = false;
+        });
+      }
     }
   }
 
@@ -366,9 +366,11 @@ class _ParentLeaderboardScreenState extends State<ParentLeaderboardScreen> {
     }
   }
 
-  /// Load monthly leaderboard (selected month, sorted by count then speed)
+  /// Load monthly leaderboard (matching child leaderboard logic)
   Future<void> _loadMonthlyLeaderboard() async {
-    setState(() => _isLoadingMonthly = true);
+    setState(() {
+      _isLoadingMonthly = true;
+    });
 
     try {
       // First, verify that the selected month has challenges
@@ -378,14 +380,31 @@ class _ParentLeaderboardScreenState extends State<ParentLeaderboardScreen> {
         print(
           '⚠️ Selected month ${_formatMonth(_selectedMonth)} has no challenge tasks',
         );
+        if (mounted) {
+          setState(() {
+            _monthlyEntries = [];
+            _availableMonthlyChallenges = [];
+            _selectedMonthlyChallenge = null;
+            _isLoadingMonthly = false;
+          });
+        }
+        return;
+      }
+
+      // Get all children from the same parent
+      final List<Child> children = await _haseelaService.getAllChildren(_uid);
+
+      if (children.isEmpty) {
         setState(() {
           _monthlyEntries = [];
+          _availableMonthlyChallenges = [];
+          _selectedMonthlyChallenge = null;
           _isLoadingMonthly = false;
         });
         return;
       }
 
-      // Get start and end of selected month
+      // Calculate challenge completions for the selected month (matching parent leaderboard logic)
       final monthStart = DateTime(_selectedMonth.year, _selectedMonth.month, 1);
       final monthEnd = DateTime(
         _selectedMonth.year,
@@ -395,45 +414,51 @@ class _ParentLeaderboardScreenState extends State<ParentLeaderboardScreen> {
         59,
         59,
       );
+      final Map<String, List<QueryDocumentSnapshot<Map<String, dynamic>>>>
+      childTasksMap = {};
+      final Set<String> challengeNamesSet = {};
 
-      print(
-        '🔍 Loading monthly leaderboard for: ${_formatMonth(_selectedMonth)}',
-      );
-      print('   Date range: $monthStart to $monthEnd');
-
-      // Get all children
-      final childrenSnapshot = await FirebaseFirestore.instance
-          .collection("Parents")
-          .doc(_uid)
-          .collection("Children")
-          .get();
-
-      if (childrenSnapshot.docs.isEmpty) {
-        setState(() {
-          _monthlyEntries = [];
-          _isLoadingMonthly = false;
-        });
-        return;
-      }
-
-      final Map<String, ParentLeaderboardEntry> entriesMap = {};
-
-      // For each child, get their completed challenge tasks this month
-      for (var childDoc in childrenSnapshot.docs) {
-        final childData = childDoc.data() as Map<String, dynamic>?;
-        final childId = childDoc.id;
-        final childName = childData?['firstName'] ?? 'Unknown';
-        final childAvatar = childData?['avatar'] as String?;
-
-        // Only get approved tasks (status = 'done') - children only appear after parent approval
-        final approvedTasksSnapshot = await FirebaseFirestore.instance
+      // First, get ALL challenge tasks (completed and not completed) to populate dropdown
+      final allMonthlyChallengeQueries = children.map((child) async {
+        final allTasksSnapshot = await FirebaseFirestore.instance
             .collection("Parents")
             .doc(_uid)
             .collection("Children")
-            .doc(childId)
+            .doc(child.id)
             .collection("Tasks")
             .where('isChallenge', isEqualTo: true)
-            .where('status', isEqualTo: 'done')
+            .get();
+
+        return {'childId': child.id, 'allTasks': allTasksSnapshot.docs};
+      }).toList();
+
+      final allMonthlyChallengeResults = await Future.wait(
+        allMonthlyChallengeQueries,
+      );
+      for (final result in allMonthlyChallengeResults) {
+        final allTasks =
+            result['allTasks']
+                as List<QueryDocumentSnapshot<Map<String, dynamic>>>;
+        for (final taskDoc in allTasks) {
+          final taskName = taskDoc.data()['taskName'] as String? ?? '';
+          if (taskName.isNotEmpty) {
+            challengeNamesSet.add(taskName);
+          }
+        }
+      }
+
+      // Then, get completed tasks (pending or done) for leaderboard calculations
+      // pending = child completed, waiting for approval
+      // done = parent approved
+      final monthlyTaskQueries = children.map((child) async {
+        final completedTasksSnapshot = await FirebaseFirestore.instance
+            .collection("Parents")
+            .doc(_uid)
+            .collection("Children")
+            .doc(child.id)
+            .collection("Tasks")
+            .where('isChallenge', isEqualTo: true)
+            .where('status', whereIn: ['pending', 'done'])
             .get();
 
         // Calculate score based on when child completed the task (completedDate)
@@ -525,11 +550,14 @@ class _ParentLeaderboardScreenState extends State<ParentLeaderboardScreen> {
         _isLoadingMonthly = false;
       });
     } catch (e) {
-      print('Error loading monthly leaderboard: $e');
-      setState(() {
-        _monthlyEntries = [];
-        _isLoadingMonthly = false;
-      });
+      print('❌ Error loading monthly leaderboard data: $e');
+      if (mounted) {
+        setState(() {
+          _monthlyEntries = [];
+          _availableMonthlyChallenges = [];
+          _isLoadingMonthly = false;
+        });
+      }
     }
   }
 
@@ -563,8 +591,19 @@ class _ParentLeaderboardScreenState extends State<ParentLeaderboardScreen> {
 
   @override
   Widget build(BuildContext context) {
+    if (_isLoadingWeekly && _isLoadingMonthly) {
+      return Scaffold(
+        backgroundColor: Colors.white,
+        body: Center(
+          child: CircularProgressIndicator(
+            valueColor: AlwaysStoppedAnimation<Color>(const Color(0xFF643FDB)),
+          ),
+        ),
+      );
+    }
+
     return Scaffold(
-      backgroundColor: const Color(0xFFF8FAFC),
+      backgroundColor: const Color(0xFFF3F4F6),
       bottomNavigationBar: CustomBottomNavigationBar(
         currentIndex: 3,
         onTap: (i) => _onNavTap(context, i),
@@ -573,203 +612,1031 @@ class _ParentLeaderboardScreenState extends State<ParentLeaderboardScreen> {
         backgroundColor: Colors.white,
         elevation: 0,
         surfaceTintColor: Colors.transparent,
-        automaticallyImplyLeading: false, // Remove back arrow
+        automaticallyImplyLeading: false,
         centerTitle: true,
         title: Text(
           'Leaderboard',
           style: TextStyle(
-            color: const Color(0xFF1E293B),
-            fontSize: 20.sp,
-            fontWeight: FontWeight.w700,
-            letterSpacing: 0.5,
-          ),
-        ),
-        bottom: PreferredSize(
-          preferredSize: Size.fromHeight(1.h),
-          child: Container(
-            height: 1.h,
-            decoration: BoxDecoration(
-              gradient: LinearGradient(
-                colors: [
-                  Colors.transparent,
-                  const Color(0xFFE2E8F0),
-                  Colors.transparent,
-                ],
-              ),
-            ),
+            fontSize: 24.sp,
+            fontWeight: FontWeight.bold,
+            color: const Color(0xFF1C1243),
+            fontFamily: 'SPProText',
           ),
         ),
       ),
       body: SafeArea(
-        child: SingleChildScrollView(
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              SizedBox(height: 20.h),
+        child: RefreshIndicator(
+          onRefresh: _isWeeklyView
+              ? _loadWeeklyLeaderboard
+              : _loadMonthlyLeaderboard,
+          child: _buildLeaderboardContent(),
+        ),
+      ),
+    );
+  }
 
-              // Toggle buttons (Weekly / Monthly)
-              Padding(
-                padding: EdgeInsets.symmetric(horizontal: 20.w),
-                child: Row(
-                  children: [
-                    Expanded(
-                      child: _buildToggleButton(
-                        label: 'Weekly Leaderboard',
-                        isSelected: _isWeeklyView,
-                        onTap: () {
-                          setState(() {
-                            _isWeeklyView = true;
-                          });
-                          _loadWeeklyLeaderboard();
-                        },
-                      ),
-                    ),
-                    SizedBox(width: 12.w),
-                    Expanded(
-                      child: _buildToggleButton(
-                        label: 'Monthly Leaderboard',
-                        isSelected: !_isWeeklyView,
-                        onTap: () {
-                          setState(() {
-                            _isWeeklyView = false;
-                          });
-                          _loadMonthlyLeaderboard();
-                        },
-                      ),
-                    ),
-                  ],
-                ),
-              ),
+  Widget _buildLeaderboardContent() {
+    return SingleChildScrollView(
+      physics: const ClampingScrollPhysics(),
+      child: Column(
+        children: [
+          SizedBox(height: 16.h),
+          // Filter Buttons - Always visible at top
+          Padding(
+            padding: EdgeInsets.symmetric(horizontal: 20.w),
+            child: Row(
+              children: [
+                _buildFilterButton('Weekly', true),
+                SizedBox(width: 16.w),
+                _buildFilterButton('Month', false),
+              ],
+            ),
+          ),
 
-              SizedBox(height: 24.h),
+          // Challenge selector dropdown (only show when weekly view is selected)
+          if (_isWeeklyView && _availableChallenges.isNotEmpty) ...[
+            SizedBox(height: 16.h),
+            Padding(
+              padding: EdgeInsets.symmetric(horizontal: 20.w),
+              child: _buildChallengeDropdown(),
+            ),
+          ],
 
-              // Show Weekly or Monthly based on toggle
-              _isWeeklyView ? _buildWeeklyView() : _buildMonthlyView(),
+          // Month selector dropdown (only show when monthly view is selected)
+          if (!_isWeeklyView) ...[
+            SizedBox(height: 16.h),
+            Padding(
+              padding: EdgeInsets.symmetric(horizontal: 20.w),
+              child: _buildMonthSelectorList(),
+            ),
+          ],
 
-              SizedBox(height: 32.h),
-            ],
+          // Challenge selector dropdown for monthly view
+          if (!_isWeeklyView && _availableMonthlyChallenges.isNotEmpty) ...[
+            SizedBox(height: 16.h),
+            Padding(
+              padding: EdgeInsets.symmetric(horizontal: 20.w),
+              child: _buildMonthlyChallengeDropdown(),
+            ),
+          ],
+
+          // Show empty state or leaderboard data
+          if (_isWeeklyView && _weeklyEntries.isEmpty)
+            _buildEmptyState()
+          else if (!_isWeeklyView && _monthlyEntries.isEmpty)
+            _buildEmptyState()
+          else ...[
+            SizedBox(height: 16.h),
+            _buildBarChartView(),
+          ],
+        ],
+      ),
+    );
+  }
+
+  List<ParentLeaderboardEntry> get _leaderboardData {
+    return _isWeeklyView ? _weeklyEntries : _monthlyEntries;
+  }
+
+  Widget _buildFilterButton(String label, bool isWeeklyButton) {
+    final isSelected = isWeeklyButton == _isWeeklyView;
+    return GestureDetector(
+      onTap: () {
+        setState(() {
+          _isWeeklyView = isWeeklyButton;
+          // Reset challenge selection when switching views
+          if (!isWeeklyButton) {
+            _selectedChallenge = null;
+          } else {
+            _selectedMonthlyChallenge = null;
+          }
+          _isWeeklyChallengeDropdownOpen = false;
+          _isMonthlyChallengeDropdownOpen = false;
+          _isMonthDropdownOpen = false;
+        });
+        // Reload data when switching views
+        if (isWeeklyButton) {
+          _loadWeeklyLeaderboard();
+        } else {
+          _loadMonthlyLeaderboard();
+        }
+      },
+      child: Container(
+        padding: EdgeInsets.symmetric(horizontal: 20.w, vertical: 8.h),
+        decoration: BoxDecoration(
+          color: isSelected ? const Color(0xFF643FDB) : Colors.transparent,
+          borderRadius: BorderRadius.circular(20.r),
+        ),
+        child: Text(
+          label,
+          style: TextStyle(
+            fontSize: 16.sp,
+            fontWeight: FontWeight.w600,
+            color: isSelected ? Colors.white : const Color(0xFF6B7280),
+            fontFamily: 'SPProText',
           ),
         ),
       ),
     );
   }
 
-  Widget _buildWeeklyView() {
-    if (_isLoadingWeekly) {
+  Widget _buildChallengeDropdown() {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        GestureDetector(
+          onTap: () {
+            setState(() {
+              _isWeeklyChallengeDropdownOpen = !_isWeeklyChallengeDropdownOpen;
+              if (_isWeeklyChallengeDropdownOpen) {
+                _isMonthlyChallengeDropdownOpen = false;
+              }
+            });
+          },
+          child: Container(
+            width: double.infinity,
+            padding: EdgeInsets.symmetric(horizontal: 16.w, vertical: 14.h),
+            decoration: BoxDecoration(
+              color: Colors.white,
+              borderRadius: BorderRadius.circular(8.r),
+              border: Border.all(color: const Color(0xFFE2E8F0), width: 1),
+            ),
+            child: Row(
+              children: [
+                Expanded(
+                  child: Text(
+                    _selectedChallenge ?? 'Select Challenge',
+                    style: TextStyle(
+                      fontSize: 16.sp,
+                      fontWeight: FontWeight.w600,
+                      color: const Color(0xFF643FDB),
+                      fontFamily: 'SPProText',
+                    ),
+                  ),
+                ),
+                Icon(
+                  _isWeeklyChallengeDropdownOpen
+                      ? Icons.keyboard_arrow_up
+                      : Icons.keyboard_arrow_down,
+                  color: const Color(0xFF643FDB),
+                  size: 24.sp,
+                ),
+              ],
+            ),
+          ),
+        ),
+        if (_isWeeklyChallengeDropdownOpen) ...[
+          SizedBox(height: 8.h),
+          Container(
+            decoration: BoxDecoration(
+              color: Colors.white,
+              borderRadius: BorderRadius.circular(8.r),
+              border: Border.all(color: const Color(0xFFE2E8F0), width: 1),
+            ),
+            child: Column(
+              children: _availableChallenges.map((String challengeName) {
+                final isSelected = _selectedChallenge == challengeName;
+                return GestureDetector(
+                  onTap: () async {
+                    setState(() {
+                      _isWeeklyChallengeDropdownOpen = false;
+                    });
+                    if (_selectedChallenge != challengeName) {
+                      setState(() {
+                        _selectedChallenge = challengeName;
+                      });
+                      await _loadWeeklyLeaderboard();
+                    }
+                  },
+                  child: Container(
+                    width: double.infinity,
+                    padding: EdgeInsets.symmetric(
+                      horizontal: 16.w,
+                      vertical: 14.h,
+                    ),
+                    decoration: BoxDecoration(
+                      color: isSelected
+                          ? const Color(0xFF643FDB).withOpacity(0.15)
+                          : Colors.transparent,
+                      borderRadius: BorderRadius.circular(8.r),
+                    ),
+                    child: Text(
+                      challengeName,
+                      style: TextStyle(
+                        fontSize: 16.sp,
+                        fontWeight: isSelected
+                            ? FontWeight.w600
+                            : FontWeight.w400,
+                        color: isSelected
+                            ? const Color(0xFF643FDB)
+                            : const Color(0xFF1C1243),
+                        fontFamily: 'SPProText',
+                      ),
+                    ),
+                  ),
+                );
+              }).toList(),
+            ),
+          ),
+        ],
+      ],
+    );
+  }
+
+  Widget _buildMonthlyChallengeDropdown() {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        GestureDetector(
+          onTap: () {
+            setState(() {
+              _isMonthlyChallengeDropdownOpen =
+                  !_isMonthlyChallengeDropdownOpen;
+              if (_isMonthlyChallengeDropdownOpen) {
+                _isWeeklyChallengeDropdownOpen = false;
+              }
+            });
+          },
+          child: Container(
+            width: double.infinity,
+            padding: EdgeInsets.symmetric(horizontal: 16.w, vertical: 14.h),
+            decoration: BoxDecoration(
+              color: Colors.white,
+              borderRadius: BorderRadius.circular(8.r),
+              border: Border.all(color: const Color(0xFFE2E8F0), width: 1),
+            ),
+            child: Row(
+              children: [
+                Expanded(
+                  child: Text(
+                    _selectedMonthlyChallenge ?? 'Select Challenge',
+                    style: TextStyle(
+                      fontSize: 16.sp,
+                      fontWeight: FontWeight.w600,
+                      color: const Color(0xFF643FDB),
+                      fontFamily: 'SPProText',
+                    ),
+                  ),
+                ),
+                Icon(
+                  _isMonthlyChallengeDropdownOpen
+                      ? Icons.keyboard_arrow_up
+                      : Icons.keyboard_arrow_down,
+                  color: const Color(0xFF643FDB),
+                  size: 24.sp,
+                ),
+              ],
+            ),
+          ),
+        ),
+        if (_isMonthlyChallengeDropdownOpen) ...[
+          SizedBox(height: 8.h),
+          Container(
+            decoration: BoxDecoration(
+              color: Colors.white,
+              borderRadius: BorderRadius.circular(8.r),
+              border: Border.all(color: const Color(0xFFE2E8F0), width: 1),
+            ),
+            child: Column(
+              children: _availableMonthlyChallenges.map((String challengeName) {
+                final isSelected = _selectedMonthlyChallenge == challengeName;
+                return GestureDetector(
+                  onTap: () async {
+                    setState(() {
+                      _isMonthlyChallengeDropdownOpen = false;
+                    });
+                    if (_selectedMonthlyChallenge != challengeName) {
+                      setState(() {
+                        _selectedMonthlyChallenge = challengeName;
+                      });
+                      await _loadMonthlyLeaderboard();
+                    }
+                  },
+                  child: Container(
+                    width: double.infinity,
+                    padding: EdgeInsets.symmetric(
+                      horizontal: 16.w,
+                      vertical: 14.h,
+                    ),
+                    decoration: BoxDecoration(
+                      color: isSelected
+                          ? const Color(0xFF643FDB).withOpacity(0.15)
+                          : Colors.transparent,
+                      borderRadius: BorderRadius.circular(8.r),
+                    ),
+                    child: Text(
+                      challengeName,
+                      style: TextStyle(
+                        fontSize: 16.sp,
+                        fontWeight: isSelected
+                            ? FontWeight.w600
+                            : FontWeight.w400,
+                        color: isSelected
+                            ? const Color(0xFF643FDB)
+                            : const Color(0xFF1C1243),
+                        fontFamily: 'SPProText',
+                      ),
+                    ),
+                  ),
+                );
+              }).toList(),
+            ),
+          ),
+        ],
+      ],
+    );
+  }
+
+  Widget _buildBarChartView() {
+    if (_leaderboardData.isEmpty) return SizedBox.shrink();
+
+    final hasNoChallenges = _isWeeklyView && _leaderboardData.isNotEmpty;
+    bool allHaveNoChallenges = false;
+    if (hasNoChallenges) {
+      allHaveNoChallenges =
+          _availableChallenges.isEmpty && _leaderboardData.isNotEmpty;
+    }
+
+    if (allHaveNoChallenges && _isWeeklyView) {
       return Padding(
         padding: EdgeInsets.symmetric(horizontal: 20.w),
-        child: Center(
-          child: Padding(
-            padding: EdgeInsets.all(40.h),
-            child: CircularProgressIndicator(
-              valueColor: AlwaysStoppedAnimation<Color>(
-                const Color(0xFF7C3AED),
+        child: Container(
+          padding: EdgeInsets.symmetric(vertical: 40.h),
+          decoration: BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.circular(16.r),
+          ),
+          child: Center(
+            child: Text(
+              'No challenges in this week',
+              style: TextStyle(
+                fontSize: 18.sp,
+                fontWeight: FontWeight.w600,
+                color: const Color(0xFF6B7280),
+                fontFamily: 'SPProText',
               ),
             ),
           ),
         ),
       );
     }
+    final topThree = _leaderboardData.length >= 3
+        ? _leaderboardData.take(3).toList()
+        : _leaderboardData;
+    final otherPlayers = _leaderboardData.length > 3
+        ? _leaderboardData.skip(3).toList()
+        : <ParentLeaderboardEntry>[];
 
-    // Check if challenge tasks exist using FutureBuilder
-    return FutureBuilder<bool>(
-      future: _hasChallengeTasks(),
-      builder: (context, snapshot) {
-        if (snapshot.connectionState == ConnectionState.waiting) {
-          return Padding(
-            padding: EdgeInsets.symmetric(horizontal: 20.w),
-            child: Center(
-              child: Padding(
-                padding: EdgeInsets.all(40.h),
-                child: CircularProgressIndicator(
-                  valueColor: AlwaysStoppedAnimation<Color>(
-                    const Color(0xFF7C3AED),
+    return Column(
+      children: [
+        // Podium for Top 3
+        if (topThree.isNotEmpty) _buildPodium(topThree),
+        if (topThree.isNotEmpty || otherPlayers.isNotEmpty)
+          SizedBox(height: 24.h),
+        // List for Rank 4+
+        if (otherPlayers.isNotEmpty) ..._buildOtherPlayersList(otherPlayers),
+        SizedBox(height: 100.h), // Space for bottom nav
+      ],
+    );
+  }
+
+  Widget _buildPodium(List<ParentLeaderboardEntry> topThree) {
+    final first = topThree.isNotEmpty ? topThree[0] : null;
+    final second = topThree.length > 1 ? topThree[1] : null;
+    final third = topThree.length > 2 ? topThree[2] : null;
+
+    return Padding(
+      padding: EdgeInsets.symmetric(horizontal: 20.w),
+      child: Column(
+        children: [
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+            crossAxisAlignment: CrossAxisAlignment.end,
+            children: [
+              if (second != null)
+                Expanded(
+                  child: Column(
+                    children: [
+                      Stack(
+                        alignment: Alignment.topCenter,
+                        children: [
+                          _buildAvatar(second, 60.w, false),
+                          Positioned(
+                            top: -8.h,
+                            child: Container(
+                              padding: EdgeInsets.all(4.w),
+                              decoration: BoxDecoration(
+                                color: Colors.white,
+                                shape: BoxShape.circle,
+                                boxShadow: [
+                                  BoxShadow(
+                                    color: Colors.black.withOpacity(0.1),
+                                    blurRadius: 4.r,
+                                  ),
+                                ],
+                              ),
+                              child: Text(
+                                '2',
+                                style: TextStyle(
+                                  fontSize: 18.sp,
+                                  fontWeight: FontWeight.bold,
+                                  color: const Color(0xFF643FDB),
+                                  fontFamily: 'SPProText',
+                                ),
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                      SizedBox(height: 8.h),
+                      Text(
+                        second.childName,
+                        style: TextStyle(
+                          fontSize: 14.sp,
+                          fontWeight: FontWeight.bold,
+                          color: const Color(0xFF1C1243),
+                          fontFamily: 'SPProText',
+                        ),
+                        textAlign: TextAlign.center,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                      SizedBox(height: 4.h),
+                      Container(
+                        padding: EdgeInsets.symmetric(
+                          horizontal: 8.w,
+                          vertical: 4.h,
+                        ),
+                        decoration: BoxDecoration(
+                          color: const Color(0xFF643FDB),
+                          borderRadius: BorderRadius.circular(12.r),
+                        ),
+                        child: Text(
+                          '${second.points} QP',
+                          style: TextStyle(
+                            fontSize: 12.sp,
+                            fontWeight: FontWeight.w600,
+                            color: Colors.white,
+                            fontFamily: 'SPProText',
+                          ),
+                        ),
+                      ),
+                    ],
                   ),
+                )
+              else
+                Expanded(child: SizedBox()),
+              SizedBox(width: 8.w),
+              if (first != null)
+                Expanded(
+                  child: Column(
+                    children: [
+                      Stack(
+                        alignment: Alignment.topCenter,
+                        children: [
+                          _buildAvatar(first, 80.w, true),
+                          Positioned(
+                            top: -8.h,
+                            child: Container(
+                              padding: EdgeInsets.all(4.w),
+                              decoration: BoxDecoration(
+                                color: Colors.white,
+                                shape: BoxShape.circle,
+                                boxShadow: [
+                                  BoxShadow(
+                                    color: Colors.black.withOpacity(0.1),
+                                    blurRadius: 4.r,
+                                  ),
+                                ],
+                              ),
+                              child: Icon(
+                                Icons.workspace_premium,
+                                size: 24.sp,
+                                color: const Color(0xFFFFD700),
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                      SizedBox(height: 8.h),
+                      Text(
+                        first.childName,
+                        style: TextStyle(
+                          fontSize: 14.sp,
+                          fontWeight: FontWeight.bold,
+                          color: const Color(0xFF1C1243),
+                          fontFamily: 'SPProText',
+                        ),
+                        textAlign: TextAlign.center,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                      SizedBox(height: 4.h),
+                      Container(
+                        padding: EdgeInsets.symmetric(
+                          horizontal: 8.w,
+                          vertical: 4.h,
+                        ),
+                        decoration: BoxDecoration(
+                          color: const Color(0xFF643FDB),
+                          borderRadius: BorderRadius.circular(12.r),
+                        ),
+                        child: Text(
+                          '${first.points} QP',
+                          style: TextStyle(
+                            fontSize: 12.sp,
+                            fontWeight: FontWeight.w600,
+                            color: Colors.white,
+                            fontFamily: 'SPProText',
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                )
+              else
+                Expanded(child: SizedBox()),
+              SizedBox(width: 8.w),
+              if (third != null)
+                Expanded(
+                  child: Column(
+                    children: [
+                      Stack(
+                        alignment: Alignment.topCenter,
+                        children: [
+                          _buildAvatar(third, 60.w, false),
+                          Positioned(
+                            top: -8.h,
+                            child: Container(
+                              padding: EdgeInsets.all(4.w),
+                              decoration: BoxDecoration(
+                                color: Colors.white,
+                                shape: BoxShape.circle,
+                                boxShadow: [
+                                  BoxShadow(
+                                    color: Colors.black.withOpacity(0.1),
+                                    blurRadius: 4.r,
+                                  ),
+                                ],
+                              ),
+                              child: Text(
+                                '3',
+                                style: TextStyle(
+                                  fontSize: 18.sp,
+                                  fontWeight: FontWeight.bold,
+                                  color: const Color(0xFF643FDB),
+                                  fontFamily: 'SPProText',
+                                ),
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                      SizedBox(height: 8.h),
+                      Text(
+                        third.childName,
+                        style: TextStyle(
+                          fontSize: 14.sp,
+                          fontWeight: FontWeight.bold,
+                          color: const Color(0xFF1C1243),
+                          fontFamily: 'SPProText',
+                        ),
+                        textAlign: TextAlign.center,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                      SizedBox(height: 4.h),
+                      Container(
+                        padding: EdgeInsets.symmetric(
+                          horizontal: 8.w,
+                          vertical: 4.h,
+                        ),
+                        decoration: BoxDecoration(
+                          color: const Color(0xFF643FDB),
+                          borderRadius: BorderRadius.circular(12.r),
+                        ),
+                        child: Text(
+                          '${third.points} QP',
+                          style: TextStyle(
+                            fontSize: 12.sp,
+                            fontWeight: FontWeight.w600,
+                            color: Colors.white,
+                            fontFamily: 'SPProText',
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                )
+              else
+                Expanded(child: SizedBox()),
+            ],
+          ),
+          SizedBox(height: 16.h),
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+            crossAxisAlignment: CrossAxisAlignment.end,
+            children: [
+              if (second != null)
+                Expanded(
+                  child: Container(
+                    height: 100.h,
+                    decoration: BoxDecoration(
+                      gradient: LinearGradient(
+                        begin: Alignment.topCenter,
+                        end: Alignment.bottomCenter,
+                        colors: [
+                          const Color(0xFF643FDB).withOpacity(0.3),
+                          const Color(0xFF643FDB).withOpacity(0.6),
+                        ],
+                      ),
+                      borderRadius: BorderRadius.only(
+                        topLeft: Radius.circular(12.r),
+                        topRight: Radius.circular(12.r),
+                      ),
+                    ),
+                    child: Center(
+                      child: Text(
+                        '2',
+                        style: TextStyle(
+                          fontSize: 48.sp,
+                          fontWeight: FontWeight.bold,
+                          color: Colors.white,
+                          fontFamily: 'SPProText',
+                        ),
+                      ),
+                    ),
+                  ),
+                )
+              else
+                Expanded(child: SizedBox()),
+              SizedBox(width: 4.w),
+              if (first != null)
+                Expanded(
+                  child: Container(
+                    height: 140.h,
+                    decoration: BoxDecoration(
+                      gradient: LinearGradient(
+                        begin: Alignment.topCenter,
+                        end: Alignment.bottomCenter,
+                        colors: [
+                          const Color(0xFF643FDB).withOpacity(0.3),
+                          const Color(0xFF643FDB).withOpacity(0.6),
+                        ],
+                      ),
+                      borderRadius: BorderRadius.only(
+                        topLeft: Radius.circular(12.r),
+                        topRight: Radius.circular(12.r),
+                      ),
+                    ),
+                    child: Center(
+                      child: Text(
+                        '1',
+                        style: TextStyle(
+                          fontSize: 48.sp,
+                          fontWeight: FontWeight.bold,
+                          color: Colors.white,
+                          fontFamily: 'SPProText',
+                        ),
+                      ),
+                    ),
+                  ),
+                )
+              else
+                Expanded(child: SizedBox()),
+              SizedBox(width: 4.w),
+              if (third != null)
+                Expanded(
+                  child: Container(
+                    height: 80.h,
+                    decoration: BoxDecoration(
+                      gradient: LinearGradient(
+                        begin: Alignment.topCenter,
+                        end: Alignment.bottomCenter,
+                        colors: [
+                          const Color(0xFF643FDB).withOpacity(0.3),
+                          const Color(0xFF643FDB).withOpacity(0.6),
+                        ],
+                      ),
+                      borderRadius: BorderRadius.only(
+                        topLeft: Radius.circular(12.r),
+                        topRight: Radius.circular(12.r),
+                      ),
+                    ),
+                    child: Center(
+                      child: Text(
+                        '3',
+                        style: TextStyle(
+                          fontSize: 48.sp,
+                          fontWeight: FontWeight.bold,
+                          color: Colors.white,
+                          fontFamily: 'SPProText',
+                        ),
+                      ),
+                    ),
+                  ),
+                )
+              else
+                Expanded(child: SizedBox()),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildAvatar(ParentLeaderboardEntry entry, double size, bool isFirst) {
+    return Container(
+      width: size,
+      height: size,
+      decoration: BoxDecoration(
+        shape: BoxShape.circle,
+        border: Border.all(color: Colors.white, width: 3.w),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.1),
+            blurRadius: 8.r,
+            offset: Offset(0, 2.h),
+          ),
+        ],
+      ),
+      child: ClipOval(
+        child: entry.childAvatar != null && entry.childAvatar!.isNotEmpty
+            ? Image.network(
+                entry.childAvatar!,
+                fit: BoxFit.cover,
+                errorBuilder: (context, error, stackTrace) {
+                  return Container(
+                    color: Colors.grey[300],
+                    child: Icon(
+                      Icons.person,
+                      size: size * 0.5,
+                      color: Colors.grey[600],
+                    ),
+                  );
+                },
+              )
+            : Container(
+                color: Colors.grey[300],
+                child: Icon(
+                  Icons.person,
+                  size: size * 0.5,
+                  color: Colors.grey[600],
                 ),
               ),
-            ),
-          );
-        }
+      ),
+    );
+  }
 
-        final hasChallenges = snapshot.data ?? false;
-        if (!hasChallenges) {
-          return Padding(
-            padding: EdgeInsets.symmetric(horizontal: 20.w),
-            child: Container(
-              padding: EdgeInsets.all(32.w),
-              decoration: BoxDecoration(
-                color: Colors.white,
-                borderRadius: BorderRadius.circular(16.r),
-                border: Border.all(color: const Color(0xFFE2E8F0), width: 1),
+  List<Widget> _buildOtherPlayersList(List<ParentLeaderboardEntry> players) {
+    return [
+      Padding(
+        padding: EdgeInsets.symmetric(horizontal: 20.w),
+        child: Container(
+          padding: EdgeInsets.all(16.w),
+          decoration: BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.circular(16.r),
+            boxShadow: [
+              BoxShadow(
+                color: Colors.black.withOpacity(0.05),
+                blurRadius: 8.r,
+                offset: Offset(0, 2.h),
               ),
-              child: Column(
-                children: [
-                  Icon(
-                    Icons.emoji_events_outlined,
-                    size: 64.sp,
-                    color: const Color(0xFF94A3B8),
-                  ),
-                  SizedBox(height: 16.h),
-                  Text(
-                    'No challenge task yet',
-                    style: TextStyle(
-                      fontSize: 18.sp,
-                      fontWeight: FontWeight.w600,
-                      color: const Color(0xFF1E293B),
-                    ),
-                  ),
-                  SizedBox(height: 8.h),
-                  Text(
-                    'Start a challenge task to see the weekly leaderboard',
-                    textAlign: TextAlign.center,
-                    style: TextStyle(
-                      fontSize: 14.sp,
-                      color: const Color(0xFF64748B),
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          );
-        }
-
-        // Don't show "no completions" message here - if challenge exists, show children with 0 tasks
-        // The "no challenge task" message is already handled by the FutureBuilder above
-
-        // Separate entries: those with tasks (for top 3) and all entries (for list)
-        final entriesWithTasks = _weeklyEntries
-            .where((e) => e.completedCount > 0)
-            .toList();
-        final allEntries = _weeklyEntries; // All entries for the list below
-
-        return Padding(
-          padding: EdgeInsets.symmetric(horizontal: 20.w),
+            ],
+          ),
           child: Column(
+            children: players.asMap().entries.map((entryMap) {
+              final entry = entryMap.value;
+              final index = entryMap.key;
+              final isLast = index == players.length - 1;
+              return Padding(
+                padding: EdgeInsets.only(bottom: isLast ? 0 : 16.h),
+                child: _buildListEntry(entry),
+              );
+            }).toList(),
+          ),
+        ),
+      ),
+    ];
+  }
+
+  Widget _buildListEntry(ParentLeaderboardEntry entry) {
+    final rank = _leaderboardData.indexOf(entry) + 1;
+    return Row(
+      children: [
+        Container(
+          width: 32.w,
+          height: 32.w,
+          decoration: BoxDecoration(
+            color: const Color(0xFFF3F4F6),
+            shape: BoxShape.circle,
+          ),
+          child: Center(
+            child: Text(
+              '$rank',
+              style: TextStyle(
+                fontSize: 14.sp,
+                fontWeight: FontWeight.bold,
+                color: const Color(0xFF6B7280),
+                fontFamily: 'SPProText',
+              ),
+            ),
+          ),
+        ),
+        SizedBox(width: 12.w),
+        Container(
+          width: 40.w,
+          height: 40.w,
+          decoration: BoxDecoration(
+            shape: BoxShape.circle,
+            border: Border.all(color: Colors.grey[300]!, width: 2.w),
+          ),
+          child: ClipOval(
+            child: entry.childAvatar != null && entry.childAvatar!.isNotEmpty
+                ? Image.network(
+                    entry.childAvatar!,
+                    fit: BoxFit.cover,
+                    errorBuilder: (context, error, stackTrace) {
+                      return Container(
+                        color: Colors.grey[300],
+                        child: Icon(
+                          Icons.person,
+                          size: 20.sp,
+                          color: Colors.grey[600],
+                        ),
+                      );
+                    },
+                  )
+                : Container(
+                    color: Colors.grey[300],
+                    child: Icon(
+                      Icons.person,
+                      size: 20.sp,
+                      color: Colors.grey[600],
+                    ),
+                  ),
+          ),
+        ),
+        SizedBox(width: 12.w),
+        Expanded(
+          child: Text(
+            entry.childName,
+            style: TextStyle(
+              fontSize: 16.sp,
+              fontWeight: FontWeight.w600,
+              color: const Color(0xFF1C1243),
+              fontFamily: 'SPProText',
+            ),
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+          ),
+        ),
+        Text(
+          '${entry.points} points',
+          style: TextStyle(
+            fontSize: 14.sp,
+            color: const Color(0xFF6B7280),
+            fontFamily: 'SPProText',
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildEmptyState() {
+    if (_isWeeklyView) {
+      if (_selectedChallenge != null) {
+        return Center(
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
             children: [
-              // Top 3: Only show children who have completed tasks
-              _buildTopThreeLeaderboard(entriesWithTasks),
-              // List below: Show all remaining children (those not in top 3)
-              if (allEntries.length > 3 || entriesWithTasks.isEmpty) ...[
-                SizedBox(height: 24.h),
-                // If no one has completed tasks, show all children alphabetically
-                if (entriesWithTasks.isEmpty) ...[
-                  ...List.generate(allEntries.length, (index) {
-                    final entry = allEntries[index];
-                    return _buildLeaderboardItem(entry: entry, rank: index + 1);
-                  }),
-                ] else ...[
-                  // Show remaining children (those not in top 3)
-                  ...List.generate(allEntries.length - 3, (index) {
-                    final entry = allEntries[index + 3];
-                    return _buildLeaderboardItem(entry: entry, rank: index + 4);
-                  }),
-                ],
-              ],
+              Icon(
+                Icons.emoji_events_outlined,
+                size: 80.sp,
+                color: Colors.grey[400],
+              ),
+              SizedBox(height: 16.h),
+              Text(
+                'No completions for "${_selectedChallenge}"',
+                style: TextStyle(
+                  fontSize: 18.sp,
+                  fontWeight: FontWeight.w600,
+                  color: Colors.grey[600],
+                  fontFamily: 'SPProText',
+                ),
+                textAlign: TextAlign.center,
+              ),
+              SizedBox(height: 8.h),
+              Text(
+                'No children have completed this challenge yet',
+                style: TextStyle(
+                  fontSize: 14.sp,
+                  color: Colors.grey[500],
+                  fontFamily: 'SPProText',
+                ),
+                textAlign: TextAlign.center,
+              ),
             ],
           ),
         );
-      },
-    );
+      }
+      return Center(
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Icon(Icons.people_outline, size: 80.sp, color: Colors.grey[400]),
+            SizedBox(height: 16.h),
+            Text(
+              'No siblings in the list',
+              style: TextStyle(
+                fontSize: 18.sp,
+                fontWeight: FontWeight.w600,
+                color: Colors.grey[600],
+                fontFamily: 'SPProText',
+              ),
+            ),
+            SizedBox(height: 8.h),
+            Text(
+              'Add more siblings to start competing!',
+              style: TextStyle(
+                fontSize: 14.sp,
+                color: Colors.grey[500],
+                fontFamily: 'SPProText',
+              ),
+            ),
+          ],
+        ),
+      );
+    } else {
+      if (_selectedMonthlyChallenge != null) {
+        return Center(
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Icon(
+                Icons.emoji_events_outlined,
+                size: 80.sp,
+                color: Colors.grey[400],
+              ),
+              SizedBox(height: 16.h),
+              Text(
+                'No completions for "${_selectedMonthlyChallenge}"',
+                style: TextStyle(
+                  fontSize: 18.sp,
+                  fontWeight: FontWeight.w600,
+                  color: Colors.grey[600],
+                  fontFamily: 'SPProText',
+                ),
+                textAlign: TextAlign.center,
+              ),
+              SizedBox(height: 8.h),
+              Text(
+                'No children have completed this challenge in ${_formatMonth(_selectedMonth)}',
+                style: TextStyle(
+                  fontSize: 14.sp,
+                  color: Colors.grey[500],
+                  fontFamily: 'SPProText',
+                ),
+                textAlign: TextAlign.center,
+              ),
+            ],
+          ),
+        );
+      }
+      return Center(
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Icon(
+              Icons.emoji_events_outlined,
+              size: 80.sp,
+              color: Colors.grey[400],
+            ),
+            SizedBox(height: 16.h),
+            Text(
+              'No challenges in ${_formatMonth(_selectedMonth)}',
+              style: TextStyle(
+                fontSize: 18.sp,
+                fontWeight: FontWeight.w600,
+                color: Colors.grey[600],
+                fontFamily: 'SPProText',
+              ),
+            ),
+            SizedBox(height: 8.h),
+            Text(
+              'There were no challenge task completions in this month',
+              textAlign: TextAlign.center,
+              style: TextStyle(
+                fontSize: 14.sp,
+                color: Colors.grey[500],
+                fontFamily: 'SPProText',
+              ),
+            ),
+          ],
+        ),
+      );
+    }
   }
 
   Widget _buildMonthSelectorList() {
@@ -799,7 +1666,8 @@ class _ParentLeaderboardScreenState extends State<ParentLeaderboardScreen> {
                     style: TextStyle(
                       fontSize: 16.sp,
                       fontWeight: FontWeight.w600,
-                      color: const Color(0xFF7C3AED),
+                      color: const Color(0xFF643FDB),
+                      fontFamily: 'SPProText',
                     ),
                   ),
                 ),
@@ -807,7 +1675,7 @@ class _ParentLeaderboardScreenState extends State<ParentLeaderboardScreen> {
                   _isMonthDropdownOpen
                       ? Icons.keyboard_arrow_up
                       : Icons.keyboard_arrow_down,
-                  color: const Color(0xFF7C3AED),
+                  color: const Color(0xFF643FDB),
                   size: 24.sp,
                 ),
               ],
@@ -860,7 +1728,7 @@ class _ParentLeaderboardScreenState extends State<ParentLeaderboardScreen> {
                     ),
                     decoration: BoxDecoration(
                       color: isSelected
-                          ? const Color(0xFF7C3AED).withOpacity(0.15)
+                          ? const Color(0xFF643FDB).withOpacity(0.15)
                           : Colors.transparent,
                       borderRadius: BorderRadius.circular(8.r),
                     ),
@@ -872,8 +1740,9 @@ class _ParentLeaderboardScreenState extends State<ParentLeaderboardScreen> {
                             ? FontWeight.w600
                             : FontWeight.w400,
                         color: isSelected
-                            ? const Color(0xFF7C3AED)
-                            : const Color(0xFF1E293B),
+                            ? const Color(0xFF643FDB)
+                            : const Color(0xFF1C1243),
+                        fontFamily: 'SPProText',
                       ),
                     ),
                   ),
@@ -883,643 +1752,6 @@ class _ParentLeaderboardScreenState extends State<ParentLeaderboardScreen> {
           ),
         ],
       ],
-    );
-  }
-
-  Widget _buildMonthlyView() {
-    return Padding(
-      padding: EdgeInsets.symmetric(horizontal: 20.w),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          // Month selector list
-          _buildMonthSelectorList(),
-
-          SizedBox(height: 24.h),
-
-          // Leaderboard content
-          if (_isLoadingMonthly)
-            Center(
-              child: Padding(
-                padding: EdgeInsets.all(40.h),
-                child: CircularProgressIndicator(
-                  valueColor: AlwaysStoppedAnimation<Color>(
-                    const Color(0xFF7C3AED),
-                  ),
-                ),
-              ),
-            )
-          else if (_monthlyEntries.isEmpty)
-            Container(
-              padding: EdgeInsets.all(32.w),
-              decoration: BoxDecoration(
-                color: Colors.white,
-                borderRadius: BorderRadius.circular(16.r),
-                border: Border.all(color: const Color(0xFFE2E8F0), width: 1),
-              ),
-              child: Column(
-                mainAxisAlignment: MainAxisAlignment.center,
-                crossAxisAlignment: CrossAxisAlignment.center,
-                children: [
-                  Icon(
-                    Icons.emoji_events_outlined,
-                    size: 64.sp,
-                    color: const Color(0xFF94A3B8),
-                  ),
-                  SizedBox(height: 16.h),
-                  Text(
-                    'No challenge tasks in ${_formatMonth(_selectedMonth)}',
-                    textAlign: TextAlign.center,
-                    style: TextStyle(
-                      fontSize: 18.sp,
-                      fontWeight: FontWeight.w600,
-                      color: const Color(0xFF1E293B),
-                    ),
-                  ),
-                  SizedBox(height: 8.h),
-                  Text(
-                    'There were no challenge task completions in this month',
-                    textAlign: TextAlign.center,
-                    style: TextStyle(
-                      fontSize: 14.sp,
-                      color: const Color(0xFF64748B),
-                    ),
-                  ),
-                ],
-              ),
-            )
-          else ...[
-            // Separate entries: those with tasks (for top 3) and all entries (for list)
-            Builder(
-              builder: (context) {
-                final entriesWithTasks = _monthlyEntries
-                    .where((e) => e.completedCount > 0)
-                    .toList();
-                final allEntries =
-                    _monthlyEntries; // All entries for the list below
-
-                return Column(
-                  children: [
-                    // Top 3: Only show children who have completed tasks
-                    _buildTopThreeLeaderboard(entriesWithTasks),
-                    // List below: Show all remaining children (those not in top 3)
-                    if (allEntries.length > 3 || entriesWithTasks.isEmpty) ...[
-                      SizedBox(height: 24.h),
-                      // If no one has completed tasks, show all children alphabetically
-                      if (entriesWithTasks.isEmpty) ...[
-                        ...List.generate(allEntries.length, (index) {
-                          final entry = allEntries[index];
-                          return _buildLeaderboardItem(
-                            entry: entry,
-                            rank: index + 1,
-                          );
-                        }),
-                      ] else ...[
-                        // Show remaining children (those not in top 3)
-                        ...List.generate(allEntries.length - 3, (index) {
-                          final entry = allEntries[index + 3];
-                          return _buildLeaderboardItem(
-                            entry: entry,
-                            rank: index + 4,
-                          );
-                        }),
-                      ],
-                    ],
-                  ],
-                );
-              },
-            ),
-          ],
-        ],
-      ),
-    );
-  }
-
-  Widget _buildToggleButton({
-    required String label,
-    required bool isSelected,
-    required VoidCallback onTap,
-  }) {
-    return Material(
-      color: Colors.transparent,
-      child: InkWell(
-        onTap: onTap,
-        borderRadius: BorderRadius.circular(12.r),
-        child: Container(
-          padding: EdgeInsets.symmetric(vertical: 12.h),
-          decoration: BoxDecoration(
-            color: isSelected ? const Color(0xFF7C3AED) : Colors.white,
-            borderRadius: BorderRadius.circular(12.r),
-            border: Border.all(
-              color: isSelected
-                  ? const Color(0xFF7C3AED)
-                  : const Color(0xFFE2E8F0),
-              width: 1.5,
-            ),
-          ),
-          child: Center(
-            child: Text(
-              label,
-              style: TextStyle(
-                fontSize: 14.sp,
-                fontWeight: FontWeight.w600,
-                color: isSelected ? Colors.white : const Color(0xFF64748B),
-              ),
-            ),
-          ),
-        ),
-      ),
-    );
-  }
-
-  Widget _buildTopThreeLeaderboard(List<ParentLeaderboardEntry> entries) {
-    // Always show 3 ranks, even if only one child
-    final first = entries.isNotEmpty ? entries[0] : null;
-    final second = entries.length > 1 ? entries[1] : null;
-    final third = entries.length > 2 ? entries[2] : null;
-
-    return Column(
-      children: [
-        // Top 3 on pedestals
-        Row(
-          mainAxisAlignment: MainAxisAlignment.center,
-          crossAxisAlignment: CrossAxisAlignment.end,
-          children: [
-            // 2nd place (left) - always show, even if empty
-            Expanded(
-              child: Stack(
-                clipBehavior: Clip.none,
-                alignment: Alignment.topCenter,
-                children: [
-                  // The card
-                  _buildTopThreeCard(
-                    entry: second,
-                    rank: 2,
-                    color: const Color(0xFFFF9800), // Orange
-                  ),
-                  // Star badge with #2
-                  Positioned(
-                    top: -20.h,
-                    child: Container(
-                      width: 40.w,
-                      height: 40.w,
-                      decoration: BoxDecoration(
-                        color: const Color(
-                          0xFFC0C0C0,
-                        ), // Always silver color, even when empty
-                        shape: BoxShape.circle,
-                        border: Border.all(color: Colors.white, width: 2),
-                        boxShadow: [
-                          // LED glow effect - multiple layers for depth
-                          BoxShadow(
-                            color: const Color(0xFFC0C0C0).withOpacity(0.8),
-                            blurRadius: 15,
-                            spreadRadius: 2,
-                            offset: Offset(0, 0),
-                          ),
-                          BoxShadow(
-                            color: const Color(0xFFC0C0C0).withOpacity(0.6),
-                            blurRadius: 10,
-                            spreadRadius: 1,
-                            offset: Offset(0, 0),
-                          ),
-                          BoxShadow(
-                            color: const Color(0xFFC0C0C0).withOpacity(0.4),
-                            blurRadius: 5,
-                            offset: Offset(0, 2),
-                          ),
-                        ],
-                      ),
-                      child: Column(
-                        mainAxisAlignment: MainAxisAlignment.center,
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          Icon(Icons.star, color: Colors.white, size: 14.sp),
-                          SizedBox(height: 1.h),
-                          Text(
-                            '#2',
-                            style: TextStyle(
-                              fontSize: 10.sp,
-                              fontWeight: FontWeight.bold,
-                              color: Colors.white,
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                  ),
-                ],
-              ),
-            ),
-            SizedBox(width: 8.w),
-            // 1st place (center) - always show
-            Expanded(
-              flex: 2,
-              child: Stack(
-                clipBehavior: Clip.none,
-                alignment: Alignment.topCenter,
-                children: [
-                  // The card
-                  _buildTopThreeCard(
-                    entry: first,
-                    rank: 1,
-                    color: const Color(0xFF7C3AED), // Purple
-                    isFirst: true,
-                  ),
-                  // Star badge with #1
-                  Positioned(
-                    top: -20.h,
-                    child: Container(
-                      width: 48.w,
-                      height: 48.w,
-                      decoration: BoxDecoration(
-                        color: first != null
-                            ? Colors.yellow[700]!
-                            : Colors.grey[300]!,
-                        shape: BoxShape.circle,
-                        border: Border.all(color: Colors.white, width: 2),
-                        boxShadow: [
-                          // LED glow effect - multiple layers for depth
-                          BoxShadow(
-                            color:
-                                (first != null
-                                        ? Colors.yellow[700]!
-                                        : Colors.grey[400]!)
-                                    .withOpacity(0.9),
-                            blurRadius: 20,
-                            spreadRadius: 3,
-                            offset: Offset(0, 0),
-                          ),
-                          BoxShadow(
-                            color:
-                                (first != null
-                                        ? Colors.yellow[600]!
-                                        : Colors.grey[300]!)
-                                    .withOpacity(0.7),
-                            blurRadius: 15,
-                            spreadRadius: 2,
-                            offset: Offset(0, 0),
-                          ),
-                          BoxShadow(
-                            color:
-                                (first != null
-                                        ? Colors.yellow
-                                        : Colors.grey[200]!)
-                                    .withOpacity(0.5),
-                            blurRadius: 8,
-                            offset: Offset(0, 2),
-                          ),
-                        ],
-                      ),
-                      child: Column(
-                        mainAxisAlignment: MainAxisAlignment.center,
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          Icon(Icons.star, color: Colors.white, size: 16.sp),
-                          SizedBox(height: 1.h),
-                          Text(
-                            '#1',
-                            style: TextStyle(
-                              fontSize: 12.sp,
-                              fontWeight: FontWeight.bold,
-                              color: Colors.white,
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                  ),
-                ],
-              ),
-            ),
-            SizedBox(width: 8.w),
-            // 3rd place (right) - always show, even if empty
-            Expanded(
-              child: Stack(
-                clipBehavior: Clip.none,
-                alignment: Alignment.topCenter,
-                children: [
-                  // The card
-                  _buildTopThreeCard(
-                    entry: third,
-                    rank: 3,
-                    color: const Color(0xFFFF9800), // Orange
-                  ),
-                  // Star badge with #3
-                  Positioned(
-                    top: -20.h,
-                    child: Container(
-                      width: 40.w,
-                      height: 40.w,
-                      decoration: BoxDecoration(
-                        color: const Color(
-                          0xFFCD7F32,
-                        ), // Always bronze color, even when empty
-                        shape: BoxShape.circle,
-                        border: Border.all(color: Colors.white, width: 2),
-                        boxShadow: [
-                          // LED glow effect - multiple layers for depth
-                          BoxShadow(
-                            color: const Color(0xFFCD7F32).withOpacity(0.8),
-                            blurRadius: 15,
-                            spreadRadius: 2,
-                            offset: Offset(0, 0),
-                          ),
-                          BoxShadow(
-                            color: const Color(0xFFCD7F32).withOpacity(0.6),
-                            blurRadius: 10,
-                            spreadRadius: 1,
-                            offset: Offset(0, 0),
-                          ),
-                          BoxShadow(
-                            color: const Color(0xFFCD7F32).withOpacity(0.4),
-                            blurRadius: 5,
-                            offset: Offset(0, 2),
-                          ),
-                        ],
-                      ),
-                      child: Column(
-                        mainAxisAlignment: MainAxisAlignment.center,
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          Icon(Icons.star, color: Colors.white, size: 14.sp),
-                          SizedBox(height: 1.h),
-                          Text(
-                            '#3',
-                            style: TextStyle(
-                              fontSize: 10.sp,
-                              fontWeight: FontWeight.bold,
-                              color: Colors.white,
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          ],
-        ),
-      ],
-    );
-  }
-
-  Widget _buildTopThreeCard({
-    ParentLeaderboardEntry? entry,
-    required int rank,
-    required Color color,
-    bool isFirst = false,
-  }) {
-    // If no entry, show empty card
-    if (entry == null) {
-      final height = isFirst ? 240.h : 200.h;
-      return Container(
-        height: height,
-        padding: EdgeInsets.only(
-          left: 6.w,
-          right: 6.w,
-          top: 18.h,
-          bottom: 10.h,
-        ),
-        decoration: BoxDecoration(
-          color: color.withOpacity(0.3),
-          borderRadius: BorderRadius.circular(16.r),
-          border: Border.all(color: color.withOpacity(0.5), width: 1),
-        ),
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            // Empty avatar circle
-            CircleAvatar(
-              radius: isFirst ? 56.r : 46.r,
-              backgroundColor: Colors.white.withOpacity(0.2),
-              child: Icon(
-                Icons.person,
-                color: Colors.white.withOpacity(0.3),
-                size: isFirst ? 40.sp : 32.sp,
-              ),
-            ),
-            SizedBox(height: 12.h),
-            // Empty name
-            Text(
-              '',
-              style: TextStyle(
-                fontSize: isFirst ? 15.sp : 13.sp,
-                fontWeight: FontWeight.w700,
-                color: Colors.white.withOpacity(0.5),
-              ),
-            ),
-            SizedBox(height: 3.h),
-            // Empty tasks
-            Text(
-              '',
-              style: TextStyle(
-                fontSize: isFirst ? 12.sp : 10.sp,
-                fontWeight: FontWeight.w500,
-                color: Colors.white.withOpacity(0.5),
-              ),
-            ),
-          ],
-        ),
-      );
-    }
-    // Fixed heights to prevent overflow - increased slightly for first place to accommodate crown
-    final height = isFirst ? 240.h : 200.h;
-    final avatarSize = isFirst ? 56.r : 46.r;
-
-    return Container(
-      height: height,
-      padding: EdgeInsets.only(
-        left: 6.w,
-        right: 6.w,
-        top: isFirst
-            ? 18.h
-            : 18.h, // Extra top padding for all top 3 to make room for medals
-        bottom: 10.h,
-      ),
-      decoration: BoxDecoration(
-        color: color,
-        borderRadius: BorderRadius.circular(16.r),
-        boxShadow: [
-          BoxShadow(
-            color: color.withOpacity(0.3),
-            blurRadius: 12,
-            offset: Offset(0, 6),
-          ),
-        ],
-      ),
-      child: Column(
-        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-        mainAxisSize: MainAxisSize.max,
-        crossAxisAlignment: CrossAxisAlignment.center,
-        children: [
-          // Avatar (rank badge is now at the top with star)
-          Flexible(
-            child: CircleAvatar(
-              radius: avatarSize,
-              backgroundColor: Colors.white.withOpacity(0.3),
-              backgroundImage: entry.childAvatar != null
-                  ? NetworkImage(entry.childAvatar!)
-                  : null,
-              child: entry.childAvatar == null
-                  ? Text(
-                      entry.childName.isNotEmpty
-                          ? entry.childName[0].toUpperCase()
-                          : '?',
-                      style: TextStyle(
-                        fontSize: isFirst ? 22.sp : 18.sp,
-                        fontWeight: FontWeight.w700,
-                        color: Colors.white,
-                      ),
-                    )
-                  : null,
-            ),
-          ),
-
-          // Name and Score section
-          Flexible(
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              mainAxisAlignment: MainAxisAlignment.center,
-              crossAxisAlignment: CrossAxisAlignment.center,
-              children: [
-                // Name - using Flexible with FittedBox
-                Flexible(
-                  child: FittedBox(
-                    fit: BoxFit.scaleDown,
-                    child: Padding(
-                      padding: EdgeInsets.symmetric(horizontal: 4.w),
-                      child: Text(
-                        entry.childName,
-                        style: TextStyle(
-                          fontSize: isFirst ? 15.sp : 13.sp,
-                          fontWeight: FontWeight.w700,
-                          color: Colors.white,
-                        ),
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        textAlign: TextAlign.center,
-                      ),
-                    ),
-                  ),
-                ),
-                SizedBox(height: 3.h),
-                // Score
-                Flexible(
-                  child: FittedBox(
-                    fit: BoxFit.scaleDown,
-                    child: Padding(
-                      padding: EdgeInsets.symmetric(horizontal: 4.w),
-                      child: Text(
-                        '${entry.completedCount} ${entry.completedCount == 1 ? "task" : "tasks"}',
-                        style: TextStyle(
-                          fontSize: isFirst ? 12.sp : 10.sp,
-                          fontWeight: FontWeight.w500,
-                          color: Colors.white.withOpacity(0.9),
-                        ),
-                        maxLines: 1,
-                        textAlign: TextAlign.center,
-                      ),
-                    ),
-                  ),
-                ),
-              ],
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildLeaderboardItem({
-    required ParentLeaderboardEntry entry,
-    required int rank,
-  }) {
-    return Container(
-      margin: EdgeInsets.only(bottom: 12.h),
-      padding: EdgeInsets.all(16.w),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(16.r),
-        border: Border.all(color: const Color(0xFFE2E8F0), width: 1),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withOpacity(0.02),
-            blurRadius: 8,
-            offset: Offset(0, 2),
-          ),
-        ],
-      ),
-      child: Row(
-        children: [
-          // Rank
-          Container(
-            width: 40.w,
-            alignment: Alignment.center,
-            child: Text(
-              '#$rank',
-              style: TextStyle(
-                fontSize: 18.sp,
-                fontWeight: FontWeight.w700,
-                color: const Color(0xFF64748B),
-              ),
-            ),
-          ),
-          SizedBox(width: 16.w),
-          // Avatar
-          CircleAvatar(
-            radius: 24.r,
-            backgroundColor: const Color(0xFF7C3AED).withOpacity(0.1),
-            backgroundImage: entry.childAvatar != null
-                ? NetworkImage(entry.childAvatar!)
-                : null,
-            child: entry.childAvatar == null
-                ? Text(
-                    entry.childName.isNotEmpty
-                        ? entry.childName[0].toUpperCase()
-                        : '?',
-                    style: TextStyle(
-                      fontSize: 16.sp,
-                      fontWeight: FontWeight.w700,
-                      color: const Color(0xFF7C3AED),
-                    ),
-                  )
-                : null,
-          ),
-          SizedBox(width: 16.w),
-          // Name
-          Expanded(
-            child: Text(
-              entry.childName,
-              style: TextStyle(
-                fontSize: 16.sp,
-                fontWeight: FontWeight.w600,
-                color: const Color(0xFF1E293B),
-              ),
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-            ),
-          ),
-          SizedBox(width: 12.w),
-          // Points
-          Container(
-            padding: EdgeInsets.symmetric(horizontal: 12.w, vertical: 6.h),
-            decoration: BoxDecoration(
-              color: const Color(0xFF7C3AED).withOpacity(0.1),
-              borderRadius: BorderRadius.circular(8.r),
-            ),
-            child: Text(
-              '${entry.completedCount} ${entry.completedCount == 1 ? "task" : "tasks"}',
-              style: TextStyle(
-                fontSize: 14.sp,
-                fontWeight: FontWeight.w600,
-                color: const Color(0xFF7C3AED),
-              ),
-            ),
-          ),
-        ],
-      ),
     );
   }
 }

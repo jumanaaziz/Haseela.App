@@ -1673,10 +1673,14 @@ class _TaskDetailsBottomSheetState extends State<TaskDetailsBottomSheet>
         }
 
         // Mark task as done
-        tx.update(taskRef, {
-          'status': 'done',
-          'completedDate': FieldValue.serverTimestamp(),
-        });
+        // ✅ Preserve original completedDate (when child completed) instead of overwriting with approval time
+        final updateData = <String, dynamic>{'status': 'done'};
+        // Only set completedDate if it doesn't already exist (preserve child's completion time)
+        if (taskData == null || taskData['completedDate'] == null) {
+          updateData['completedDate'] = FieldValue.serverTimestamp();
+        }
+        // If completedDate already exists, we don't update it - it preserves the child's completion time
+        tx.update(taskRef, updateData);
 
         print('✅ Transaction completed successfully');
       });
