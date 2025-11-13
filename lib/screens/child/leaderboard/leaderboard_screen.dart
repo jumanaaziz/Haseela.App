@@ -344,29 +344,29 @@ class _LeaderboardScreenState extends State<LeaderboardScreen> {
           return aName.compareTo(bName);
         });
       } else {
-        // Normal sorting when there are challenges - prioritize earliest completion
+        // Normal sorting when there are challenges
+        // Primary: number of completed tasks (more = higher rank)
+        // Tiebreaker: earliest completion time (earlier = higher rank)
         filteredEntries.sort((a, b) {
           final aData = a.value;
           final bData = b.value;
           final aCount = aData['completedCount'] as int;
           final bCount = bData['completedCount'] as int;
 
-          // First priority: children with completions rank above those without
-          if (aCount > 0 && bCount == 0) {
-            return -1; // a has completions, b doesn't - a comes first
-          }
-          if (aCount == 0 && bCount > 0) {
-            return 1; // b has completions, a doesn't - b comes first
+          // First priority: number of completed tasks (more = higher rank)
+          if (aCount != bCount) {
+            return bCount.compareTo(aCount); // Descending: more tasks = higher rank
           }
 
-          // Second priority: earliest completion date (first to complete is #1)
+          // Second priority (tiebreaker): earliest completion date (earlier = higher rank)
+          // Only compare dates if both have completions
           if (aCount > 0 && bCount > 0) {
             final aDate = aData['earliestCompletion'] as DateTime?;
             final bDate = bData['earliestCompletion'] as DateTime?;
             if (aDate != null && bDate != null) {
               final dateComparison = aDate.compareTo(bDate);
               if (dateComparison != 0) {
-                return dateComparison; // Earlier date comes first
+                return dateComparison; // Ascending: earlier date = higher rank
               }
             } else if (aDate != null && bDate == null) {
               return -1; // a has date, b doesn't - a comes first
@@ -375,9 +375,12 @@ class _LeaderboardScreenState extends State<LeaderboardScreen> {
             }
           }
 
-          // Third priority: number of completed challenges
-          if (aCount != bCount) {
-            return bCount.compareTo(aCount);
+          // Third priority: children with completions rank above those without
+          if (aCount > 0 && bCount == 0) {
+            return -1; // a has completions, b doesn't - a comes first
+          }
+          if (aCount == 0 && bCount > 0) {
+            return 1; // b has completions, a doesn't - b comes first
           }
 
           // Fourth priority: points
@@ -749,28 +752,28 @@ class _LeaderboardScreenState extends State<LeaderboardScreen> {
             }).toList()
           : childDataMap.entries.toList();
 
+      // Primary: number of completed tasks (more = higher rank)
+      // Tiebreaker: earliest completion time (earlier = higher rank)
       filteredEntries.sort((a, b) {
         final aData = a.value;
         final bData = b.value;
         final aCount = aData['completedCount'] as int;
         final bCount = bData['completedCount'] as int;
 
-        // First priority: children with completions rank above those without
-        if (aCount > 0 && bCount == 0) {
-          return -1; // a has completions, b doesn't - a comes first
-        }
-        if (aCount == 0 && bCount > 0) {
-          return 1; // b has completions, a doesn't - b comes first
+        // First priority: number of completed tasks (more = higher rank)
+        if (aCount != bCount) {
+          return bCount.compareTo(aCount); // Descending: more tasks = higher rank
         }
 
-        // Second priority: earliest completion date (first to complete is #1)
+        // Second priority (tiebreaker): earliest completion date (earlier = higher rank)
+        // Only compare dates if both have completions
         if (aCount > 0 && bCount > 0) {
           final aDate = aData['earliestCompletion'] as DateTime?;
           final bDate = bData['earliestCompletion'] as DateTime?;
           if (aDate != null && bDate != null) {
             final dateComparison = aDate.compareTo(bDate);
             if (dateComparison != 0) {
-              return dateComparison; // Earlier date comes first
+              return dateComparison; // Ascending: earlier date = higher rank
             }
           } else if (aDate != null && bDate == null) {
             return -1; // a has date, b doesn't - a comes first
@@ -779,9 +782,12 @@ class _LeaderboardScreenState extends State<LeaderboardScreen> {
           }
         }
 
-        // Third priority: number of completed challenges
-        if (aCount != bCount) {
-          return bCount.compareTo(aCount);
+        // Third priority: children with completions rank above those without
+        if (aCount > 0 && bCount == 0) {
+          return -1; // a has completions, b doesn't - a comes first
+        }
+        if (aCount == 0 && bCount > 0) {
+          return 1; // b has completions, a doesn't - b comes first
         }
 
         // Fourth priority: points
