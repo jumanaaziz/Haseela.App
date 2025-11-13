@@ -170,7 +170,10 @@ Future<void> updateTaskStatus(
 
     Map<String, dynamic> updateData = {'status': status};
 
-    if (status == 'completed' || status == 'done') {
+    // ✅ Preserve original completedDate if it exists (don't overwrite child's completion time)
+    // Only set completedDate if status is 'done'/'completed' AND it doesn't already exist
+    if ((status == 'completed' || status == 'done') && 
+        taskData['completedDate'] == null) {
       updateData['completedDate'] = Timestamp.now();
     }
 
@@ -251,13 +254,28 @@ Future<void> updateTaskStatus(
     String imagePath,
   ) async {
     try {
+      // ✅ Check if completedDate already exists to preserve child's completion time
+      final taskDoc = await _firestore
+          .collection('Parents')
+          .doc(parentId)
+          .collection('Children')
+          .doc(childId)
+          .collection('Tasks')
+          .doc(taskId)
+          .get();
+      
+      final taskData = taskDoc.exists 
+          ? taskDoc.data() as Map<String, dynamic>? 
+          : null;
+
       Map<String, dynamic> updateData = {
         'status': status,
         'completedImagePath': imagePath, // Always save the image path
         'image': imagePath, // Also save to the new image field
       };
 
-      if (status == 'completed') {
+      // ✅ Only set completedDate if status is 'completed' AND it doesn't already exist
+      if (status == 'completed' && (taskData == null || taskData['completedDate'] == null)) {
         updateData['completedDate'] = Timestamp.now();
       }
 
