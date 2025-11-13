@@ -168,9 +168,14 @@ Future<void> updateTaskStatus(
     final previousStatus = taskData['status'] as String?;
     final allowance = (taskData['allowance'] ?? 0).toDouble();
 
+    final statusLower = status.toLowerCase();
     Map<String, dynamic> updateData = {'status': status};
 
-    if (status == 'completed' || status == 'done') {
+    final existingCompletedDate = taskData['completedDate'];
+    final shouldMarkCompleted =
+        statusLower == 'completed' || statusLower == 'done';
+
+    if (shouldMarkCompleted && existingCompletedDate == null) {
       updateData['completedDate'] = Timestamp.now();
     }
 
@@ -186,15 +191,15 @@ Future<void> updateTaskStatus(
 
     // Only add money when task moves to 'done' status
     // AND it wasn't already 'done' before
-    if (status.toLowerCase() == 'done' && 
-        previousStatus?.toLowerCase() != 'done' && 
+    if (statusLower == 'done' &&
+        previousStatus?.toLowerCase() != 'done' &&
         allowance > 0) {
       await updateWalletBalance(parentId, childId, allowance);
     }
 
     // If task is rejected after being done, deduct the money
-    if (status.toLowerCase() == 'rejected' && 
-        previousStatus?.toLowerCase() == 'done' && 
+    if (statusLower == 'rejected' &&
+        previousStatus?.toLowerCase() == 'done' &&
         allowance > 0) {
       await updateWalletBalance(parentId, childId, -allowance);
     }
@@ -251,15 +256,28 @@ Future<void> updateTaskStatus(
     String imagePath,
   ) async {
     try {
-      Map<String, dynamic> updateData = {
-        'status': status,
-        'completedImagePath': imagePath, // Always save the image path
-        'image': imagePath, // Also save to the new image field
-      };
+    final statusLower = status.toLowerCase();
+    Map<String, dynamic> updateData = {
+      'status': status,
+      'completedImagePath': imagePath, // Always save the image path
+      'image': imagePath, // Also save to the new image field
+    };
 
-      if (status == 'completed') {
+    if (statusLower == 'completed') {
+      final taskDoc = await _firestore
+          .collection('Parents')
+          .doc(parentId)
+          .collection('Children')
+          .doc(childId)
+          .collection('Tasks')
+          .doc(taskId)
+          .get();
+
+      final existingCompletedDate = taskDoc.data()?['completedDate'];
+      if (existingCompletedDate == null) {
         updateData['completedDate'] = Timestamp.now();
       }
+    }
 
       await _firestore
           .collection('Parents')

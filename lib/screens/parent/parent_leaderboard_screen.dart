@@ -276,12 +276,17 @@ class _ParentLeaderboardScreenState extends State<ParentLeaderboardScreen> {
       if (entriesWithTasks.isNotEmpty) {
         entriesWithTasks.sort((a, b) {
           // First sort by count (more completions = higher rank)
-          if (b.completedCount != a.completedCount) {
-            return b.completedCount.compareTo(a.completedCount);
-          }
+          final countCompare = b.completedCount.compareTo(a.completedCount);
+          if (countCompare != 0) return countCompare;
           // If same count, sort by earliest completion time (who completed first = higher rank)
           // This uses completedDate (when child completed), not approval time
-          return a.earliestCompletion.compareTo(b.earliestCompletion);
+          final completionCompare =
+              a.earliestCompletion.compareTo(b.earliestCompletion);
+          if (completionCompare != 0) return completionCompare;
+          // Final deterministic fallback: alphabetical by name
+          return a.childName
+              .toLowerCase()
+              .compareTo(b.childName.toLowerCase());
         });
       }
 
@@ -488,12 +493,17 @@ class _ParentLeaderboardScreenState extends State<ParentLeaderboardScreen> {
       if (entriesWithTasks.isNotEmpty) {
         entriesWithTasks.sort((a, b) {
           // First sort by count (more completions = higher rank)
-          if (b.completedCount != a.completedCount) {
-            return b.completedCount.compareTo(a.completedCount);
-          }
+          final countCompare = b.completedCount.compareTo(a.completedCount);
+          if (countCompare != 0) return countCompare;
           // If same count, sort by earliest completion time (who completed first = higher rank)
           // This uses completedDate (when child completed), not approval time
-          return a.earliestCompletion.compareTo(b.earliestCompletion);
+          final completionCompare =
+              a.earliestCompletion.compareTo(b.earliestCompletion);
+          if (completionCompare != 0) return completionCompare;
+          // Final deterministic fallback: alphabetical by name
+          return a.childName
+              .toLowerCase()
+              .compareTo(b.childName.toLowerCase());
         });
       }
 
