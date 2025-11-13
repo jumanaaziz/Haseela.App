@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_screenutil/flutter_screenutil.dart';
@@ -6,9 +7,6 @@ import '../../models/wishlist_item.dart';
 import '../../models/wallet.dart';
 import '../services/wishlist_service.dart';
 import '../services/haseela_service.dart';
-import '../../widgets/custom_bottom_nav.dart';
-import 'child_home_screen.dart';
-import 'child_task_view_screen.dart';
 
 class WishlistScreen extends StatefulWidget {
   final String parentId;
@@ -26,7 +24,6 @@ class WishlistScreen extends StatefulWidget {
 
 class _WishlistScreenState extends State<WishlistScreen>
     with TickerProviderStateMixin {
-  int _navBarIndex = 2; // Wishlist tab index
   AnimationController? _sparkleController;
   double currentBalance = 0.0;
   StreamSubscription<Wallet?>? _walletSubscription;
@@ -103,7 +100,7 @@ class _WishlistScreenState extends State<WishlistScreen>
           final wallet = walletSnapshot.hasData && walletSnapshot.data != null
               ? walletSnapshot.data!
               : null;
-          final walletBalance = wallet?.spendingBalance ?? 0.0;
+          final walletBalance = wallet?.spendingBalance ?? currentBalance;
 
           return Column(
             children: [
@@ -396,96 +393,115 @@ class _WishlistScreenState extends State<WishlistScreen>
         final items = snapshot.data ?? [];
 
         if (items.isEmpty) {
-          return Center(
-            child: Column(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                // Fun animated empty state
-                Container(
-                  padding: EdgeInsets.all(40.w),
-                  decoration: BoxDecoration(
-                    gradient: LinearGradient(
-                      begin: Alignment.topLeft,
-                      end: Alignment.bottomRight,
-                      colors: [
-                        const Color(0xFF643FDB).withOpacity(0.1),
-                        const Color(0xFF8B5CF6).withOpacity(0.1),
-                      ],
-                    ),
-                    shape: BoxShape.circle,
-                  ),
-                  child: Text('⭐', style: TextStyle(fontSize: 80.sp)),
+          return LayoutBuilder(
+            builder: (context, constraints) {
+              final availableHeight = constraints.maxHeight.isFinite
+                  ? constraints.maxHeight
+                  : MediaQuery.of(context).size.height;
+              final minContentHeight =
+                  math.max(0.0, availableHeight - 48.h);
+
+              return SingleChildScrollView(
+                physics: const BouncingScrollPhysics(
+                  parent: AlwaysScrollableScrollPhysics(),
                 ),
-                SizedBox(height: 24.h),
-                Text(
-                  'Your Dream List Awaits! 🌟',
-                  style: TextStyle(
-                    fontSize: 22.sp,
-                    fontWeight: FontWeight.bold,
-                    color: const Color(0xFF1C1243),
-                    fontFamily: 'SF Pro Text',
-                  ),
-                  textAlign: TextAlign.center,
+                padding: EdgeInsets.symmetric(
+                  horizontal: 24.w,
+                  vertical: 24.h,
                 ),
-                SizedBox(height: 12.h),
-                Padding(
-                  padding: EdgeInsets.symmetric(horizontal: 40.w),
-                  child: Text(
-                    'Start adding items you want to save up for!\nEvery completed task brings you closer 🎯',
-                    style: TextStyle(
-                      fontSize: 15.sp,
-                      color: const Color(0xFF718096),
-                      fontFamily: 'SF Pro Text',
-                      height: 1.5,
-                    ),
-                    textAlign: TextAlign.center,
+                child: ConstrainedBox(
+                  constraints: BoxConstraints(
+                    minHeight: minContentHeight,
                   ),
-                ),
-                SizedBox(height: 24.h),
-                Container(
-                  decoration: BoxDecoration(
-                    gradient: LinearGradient(
-                      colors: [
-                        const Color(0xFF643FDB),
-                        const Color(0xFF8B5CF6),
-                      ],
-                    ),
-                    borderRadius: BorderRadius.circular(30.r),
-                    boxShadow: [
-                      BoxShadow(
-                        color: const Color(0xFF643FDB).withOpacity(0.3),
-                        blurRadius: 20.r,
-                        offset: Offset(0, 10.h),
+                  child: Column(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      // Fun animated empty state
+                      Container(
+                        padding: EdgeInsets.all(36.w),
+                        decoration: BoxDecoration(
+                          gradient: LinearGradient(
+                            begin: Alignment.topLeft,
+                            end: Alignment.bottomRight,
+                            colors: [
+                              const Color(0xFF643FDB).withOpacity(0.1),
+                              const Color(0xFF8B5CF6).withOpacity(0.1),
+                            ],
+                          ),
+                          shape: BoxShape.circle,
+                        ),
+                        child: Text('⭐', style: TextStyle(fontSize: 68.sp)),
+                      ),
+                      SizedBox(height: 20.h),
+                      Text(
+                        'Your Dream List Awaits! 🌟',
+                        style: TextStyle(
+                          fontSize: 20.sp,
+                          fontWeight: FontWeight.bold,
+                          color: const Color(0xFF1C1243),
+                          fontFamily: 'SF Pro Text',
+                        ),
+                        textAlign: TextAlign.center,
+                      ),
+                      SizedBox(height: 10.h),
+                      Text(
+                        'Start adding items you want to save up for!\nEvery completed task brings you closer 🎯',
+                        style: TextStyle(
+                          fontSize: 14.sp,
+                          color: const Color(0xFF718096),
+                          fontFamily: 'SF Pro Text',
+                          height: 1.5,
+                        ),
+                        textAlign: TextAlign.center,
+                      ),
+                      SizedBox(height: 20.h),
+                      Container(
+                        decoration: BoxDecoration(
+                          gradient: LinearGradient(
+                            colors: [
+                              const Color(0xFF643FDB),
+                              const Color(0xFF8B5CF6),
+                            ],
+                          ),
+                          borderRadius: BorderRadius.circular(28.r),
+                          boxShadow: [
+                            BoxShadow(
+                              color: const Color(0xFF643FDB).withOpacity(0.3),
+                              blurRadius: 16.r,
+                              offset: Offset(0, 8.h),
+                            ),
+                          ],
+                        ),
+                        child: ElevatedButton.icon(
+                          onPressed: () => _showAddItemDialog(),
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: Colors.transparent,
+                            foregroundColor: Colors.white,
+                            shadowColor: Colors.transparent,
+                            padding: EdgeInsets.symmetric(
+                              horizontal: 28.w,
+                              vertical: 14.h,
+                            ),
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(28.r),
+                            ),
+                          ),
+                          icon: Icon(Icons.add_circle_outline, size: 22.sp),
+                          label: Text(
+                            'Add Your First Wish',
+                            style: TextStyle(
+                              fontSize: 15.sp,
+                              fontWeight: FontWeight.bold,
+                              fontFamily: 'SF Pro Text',
+                            ),
+                          ),
+                        ),
                       ),
                     ],
                   ),
-                  child: ElevatedButton.icon(
-                    onPressed: () => _showAddItemDialog(),
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: Colors.transparent,
-                      foregroundColor: Colors.white,
-                      shadowColor: Colors.transparent,
-                      padding: EdgeInsets.symmetric(
-                        horizontal: 32.w,
-                        vertical: 16.h,
-                      ),
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(30.r),
-                      ),
-                    ),
-                    icon: Icon(Icons.add_circle_outline, size: 24.sp),
-                    label: Text(
-                      'Add Your First Wish',
-                      style: TextStyle(
-                        fontSize: 16.sp,
-                        fontWeight: FontWeight.bold,
-                        fontFamily: 'SF Pro Text',
-                      ),
-                    ),
-                  ),
                 ),
-              ],
-            ),
+              );
+            },
           );
         }
 
@@ -522,7 +538,6 @@ class _WishlistScreenState extends State<WishlistScreen>
         ? 1.0
         : (balance / item.price).clamp(0.0, 1.0);
     final canAfford = balance >= item.price;
-
     return Container(
       margin: EdgeInsets.only(bottom: 20.h),
       decoration: BoxDecoration(
@@ -625,39 +640,7 @@ class _WishlistScreenState extends State<WishlistScreen>
                               ),
                             ),
                           ),
-                          if (canAfford) ...[
-                            Container(
-                              padding: EdgeInsets.symmetric(
-                                horizontal: 10.w,
-                                vertical: 4.h,
-                              ),
-                              decoration: BoxDecoration(
-                                gradient: LinearGradient(
-                                  colors: [
-                                    const Color(0xFF47C272),
-                                    const Color(0xFF34A853),
-                                  ],
-                                ),
-                                borderRadius: BorderRadius.circular(12.r),
-                              ),
-                              child: Row(
-                                mainAxisSize: MainAxisSize.min,
-                                children: [
-                                  Text('🎉', style: TextStyle(fontSize: 12.sp)),
-                                  SizedBox(width: 4.w),
-                                  Text(
-                                    'Can Buy!',
-                                    style: TextStyle(
-                                      fontSize: 11.sp,
-                                      fontWeight: FontWeight.bold,
-                                      color: Colors.white,
-                                      fontFamily: 'SF Pro Text',
-                                    ),
-                                  ),
-                                ],
-                              ),
-                            ),
-                          ],
+                          _buildPurchaseStatusButton(item, canAfford),
                         ],
                       ),
                       if (item.description.isNotEmpty) ...[
@@ -870,6 +853,73 @@ class _WishlistScreenState extends State<WishlistScreen>
             ),
           ],
         ),
+      ),
+    );
+  }
+
+  // Old design restored - no custom price tag widget
+
+  Widget _buildPurchaseStatusButton(WishlistItem item, bool canAfford) {
+    final bool isPurchased = item.isPurchased;
+
+    final List<Color> gradientColors;
+    final Color borderColor;
+    final Color foregroundColor;
+
+    if (isPurchased) {
+      gradientColors = [const Color(0xFF47C272), const Color(0xFF34A853)];
+      borderColor = Colors.transparent;
+      foregroundColor = Colors.white;
+    } else {
+      gradientColors = [const Color(0xFFD5D9E1), const Color(0xFFB5BEC9)];
+      borderColor = Colors.transparent;
+      foregroundColor = const Color(0xFF3F4C5A);
+    }
+
+    final IconData iconData = isPurchased
+        ? Icons.check_circle_rounded
+        : Icons.shopping_cart_outlined;
+
+    final String label = isPurchased ? 'Purchased' : 'Not Purchased';
+
+    return Container(
+      margin: EdgeInsets.only(left: 8.w),
+      padding: EdgeInsets.symmetric(horizontal: 12.w, vertical: 6.h),
+      decoration: BoxDecoration(
+        gradient: LinearGradient(colors: gradientColors),
+        borderRadius: BorderRadius.circular(16.r),
+        border: Border.all(
+          color: borderColor,
+          width: 1,
+        ),
+        boxShadow: [
+          if (isPurchased || canAfford)
+            BoxShadow(
+              color: gradientColors.first.withOpacity(0.25),
+              blurRadius: 10.r,
+              offset: Offset(0, 4.h),
+            ),
+        ],
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(
+            iconData,
+            size: 14.sp,
+            color: foregroundColor,
+          ),
+          SizedBox(width: 6.w),
+          Text(
+            label,
+            style: TextStyle(
+              fontSize: 11.sp,
+              fontWeight: FontWeight.w600,
+              color: foregroundColor,
+              fontFamily: 'SF Pro Text',
+            ),
+          ),
+        ],
       ),
     );
   }
@@ -1344,45 +1394,4 @@ class _WishlistScreenState extends State<WishlistScreen>
     );
   }
 
-  void _onNavTap(BuildContext context, int index) {
-    if (index == _navBarIndex) return;
-
-    setState(() {
-      _navBarIndex = index;
-    });
-
-    switch (index) {
-      case 0:
-        // Navigate to Homer
-        Navigator.pushReplacement(
-          context,
-          MaterialPageRoute(
-            builder: (_) =>
-                HomeScreen(parentId: widget.parentId, childId: widget.childId),
-          ),
-        );
-        break;
-      case 1:
-        // Navigate to Tasks
-        Navigator.pushReplacement(
-          context,
-          MaterialPageRoute(
-            builder: (_) => ChildTaskViewScreen(
-              parentId: widget.parentId,
-              childId: widget.childId,
-            ),
-          ),
-        );
-        break;
-      case 2:
-        // Already on Wishlist
-        break;
-      case 3:
-        // Navigate to Leaderboard
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Leaderboard coming soon')),
-        );
-        break;
-    }
-  }
 }

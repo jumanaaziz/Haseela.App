@@ -1,8 +1,11 @@
+import 'dart:async';
+
 import 'package:cloud_firestore/cloud_firestore.dart';
 import '../../models/wishlist_item.dart';
 
 class WishlistService {
   static final FirebaseFirestore _firestore = FirebaseFirestore.instance;
+  static final Set<String> _processingPurchaseAdjustments = {};
 
   // Get all wishlist items for a child
   static Stream<List<WishlistItem>> getWishlistItems(
@@ -49,6 +52,14 @@ class WishlistService {
             // Sort by creation date manually
             items.sort((a, b) => b.createdAt.compareTo(a.createdAt));
 
+            for (final item in items) {
+              _handleAutomaticPurchaseAdjustment(
+                parentId,
+                childId,
+                item,
+              );
+            }
+
             return items;
           });
     } catch (e) {
@@ -88,6 +99,8 @@ class WishlistService {
             'createdAt': Timestamp.fromDate(now),
             'updatedAt': Timestamp.fromDate(now),
             'isCompleted': false,
+            'isPurchased': false,
+            'purchaseDeducted': false,
           });
 
       print('✅ WishlistService: Successfully added item with ID: ${docRef.id}');
@@ -203,20 +216,186 @@ class WishlistService {
     String childId,
     String itemId,
   ) async {
+    await updateWishlistItemPurchasedStatus(
+      parentId,
+      childId,
+      itemId,
+      true,
+    );
+  }
+
+  static Future<void> updateWishlistItemPurchasedStatus(
+    String parentId,
+    String childId,
+    String itemId,
+    bool isPurchased,
+  ) async {
+    final parentRef = _firestore.collection('Parents').doc(parentId);
+    final childRef = parentRef.collection('Children').doc(childId);
+
+    final wishlistItemRef = childRef.collection('Wishlist').doc(itemId);
+    final walletRef = childRef.collection('Wallet').doc('wallet001');
+
     try {
-      await _firestore
-          .collection('Parents')
-          .doc(parentId)
-          .collection('Children')
-          .doc(childId)
-          .collection('Wishlist')
-          .doc(itemId)
-          .update({
-            'isPurchased': true,
-            'updatedAt': Timestamp.fromDate(DateTime.now()),
+      await _firestore.runTransaction((transaction) async {
+        final wishlistSnapshot = await transaction.get(wishlistItemRef);
+
+        if (!wishlistSnapshot.exists) {
+          throw Exception('Wishlist item not found');
+        }
+
+        final data = wishlistSnapshot.data() as Map<String, dynamic>;
+        final bool purchaseDeducted = data['purchaseDeducted'] == true;
+        final double price =
+            _parseToDouble(data['price'] ?? data['itemPrice'] ?? 0.0);
+        final walletSnapshot = await transaction.get(walletRef);
+
+        if (!walletSnapshot.exists) {
+          throw Exception('Wallet not found for child');
+        }
+
+        if (isPurchased && !purchaseDeducted) {
+          final walletData = walletSnapshot.data() as Map<String, dynamic>;
+          final double currentSpendingBalance = _parseToDouble(
+            walletData['spendingBalance'] ?? walletData['spendingsBalance'],
+          );
+
+          final double newSpendingBalance =
+              (currentSpendingBalance - price).clamp(0.0, double.infinity);
+
+          transaction.update(walletRef, {
+            'spendingBalance': newSpendingBalance,
+            'spendingsBalance': newSpendingBalance,
+            'updatedAt': FieldValue.serverTimestamp(),
           });
+
+          transaction.update(wishlistItemRef, {
+            'isPurchased': true,
+            'purchaseDeducted': true,
+            'updatedAt': FieldValue.serverTimestamp(),
+          });
+        } else {
+          transaction.update(wishlistItemRef, {
+            'isPurchased': isPurchased,
+            'purchaseDeducted': isPurchased ? true : false,
+            'updatedAt': FieldValue.serverTimestamp(),
+          });
+        }
+      });
     } catch (e) {
-      throw Exception('Failed to mark wishlist item as purchased: $e');
+      throw Exception(
+        'Failed to update wishlist item purchase status: $e',
+      );
     }
+  }
+
+  static Future<void> _ensurePurchaseDeduction(
+    String parentId,
+    String childId,
+    WishlistItem item,
+  ) async {
+    final wishlistItemRef = _firestore
+        .collection('Parents')
+        .doc(parentId)
+        .collection('Children')
+        .doc(childId)
+        .collection('Wishlist')
+        .doc(item.id);
+
+    final walletRef = _firestore
+        .collection('Parents')
+        .doc(parentId)
+        .collection('Children')
+        .doc(childId)
+        .collection('Wallet')
+        .doc('wallet001');
+
+    await _firestore.runTransaction((transaction) async {
+      final wishlistSnapshot = await transaction.get(wishlistItemRef);
+
+      if (!wishlistSnapshot.exists) {
+        return;
+      }
+
+      final data = wishlistSnapshot.data() as Map<String, dynamic>;
+      final bool isPurchased = data['isPurchased'] == true;
+      final bool purchaseDeducted = data['purchaseDeducted'] == true;
+
+      if (!isPurchased || purchaseDeducted) {
+        return;
+      }
+
+      final double price =
+          _parseToDouble(data['price'] ?? data['itemPrice'] ?? item.price);
+
+      if (price <= 0) {
+        transaction.update(wishlistItemRef, {
+          'purchaseDeducted': true,
+          'updatedAt': FieldValue.serverTimestamp(),
+        });
+        return;
+      }
+
+      final walletSnapshot = await transaction.get(walletRef);
+
+      if (!walletSnapshot.exists) {
+        throw Exception('Wallet not found for child');
+      }
+
+      final walletData = walletSnapshot.data() as Map<String, dynamic>;
+      final double currentSpendingBalance = _parseToDouble(
+        walletData['spendingBalance'] ?? walletData['spendingsBalance'],
+      );
+
+      final double newSpendingBalance =
+          (currentSpendingBalance - price).clamp(0.0, double.infinity);
+
+      transaction.update(walletRef, {
+        'spendingBalance': newSpendingBalance,
+        'spendingsBalance': newSpendingBalance,
+        'updatedAt': FieldValue.serverTimestamp(),
+      });
+
+      transaction.update(wishlistItemRef, {
+        'purchaseDeducted': true,
+        'updatedAt': FieldValue.serverTimestamp(),
+      });
+    });
+  }
+
+  static void _handleAutomaticPurchaseAdjustment(
+    String parentId,
+    String childId,
+    WishlistItem item,
+  ) {
+    if (!item.isPurchased || item.purchaseDeducted) {
+      return;
+    }
+
+    final key = '$parentId::$childId::${item.id}';
+
+    if (_processingPurchaseAdjustments.contains(key)) {
+      return;
+    }
+
+    _processingPurchaseAdjustments.add(key);
+
+    Future<void>(() async {
+      try {
+        await _ensurePurchaseDeduction(parentId, childId, item);
+      } catch (e) {
+        print(
+          '❌ WishlistService: Failed to ensure purchase deduction for ${item.id}: $e',
+        );
+      } finally {
+        _processingPurchaseAdjustments.remove(key);
+      }
+    });
+  }
+
+  static double _parseToDouble(dynamic value) {
+    if (value is num) return value.toDouble();
+    if (value is String) return double.tryParse(value) ?? 0.0;
+    return 0.0;
   }
 }

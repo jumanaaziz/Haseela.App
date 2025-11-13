@@ -9,6 +9,7 @@ class WishlistItem {
   final DateTime updatedAt;
   final bool isCompleted;
   final bool isPurchased; // Purchased status
+  final bool purchaseDeducted; // Track if purchase deduction has been applied
   final String category; // Category field
 
   WishlistItem({
@@ -20,6 +21,7 @@ class WishlistItem {
     required this.updatedAt,
     this.isCompleted = false,
     this.isPurchased = false, // Default to false
+    this.purchaseDeducted = false,
     this.category = 'Other', // Default category
   });
 
@@ -33,6 +35,7 @@ class WishlistItem {
     bool isCompleted =
         data['isCompleted'] ?? (data['statuss'] == 'completed') ?? false;
     bool isPurchased = data['isPurchased'] ?? false;
+    bool purchaseDeducted = data['purchaseDeducted'] ?? false;
     String category =
         data['category'] ?? 'Other'; // Default to 'Other' if not provided
 
@@ -61,6 +64,7 @@ class WishlistItem {
       updatedAt: updatedAt,
       isCompleted: isCompleted,
       isPurchased: isPurchased,
+      purchaseDeducted: purchaseDeducted,
       category: category,
     );
   }
@@ -74,6 +78,7 @@ class WishlistItem {
       'updatedAt': Timestamp.fromDate(updatedAt),
       'isCompleted': isCompleted,
       'isPurchased': isPurchased,
+      'purchaseDeducted': purchaseDeducted,
       'category': category,
     };
   }
@@ -87,6 +92,7 @@ class WishlistItem {
     DateTime? updatedAt,
     bool? isCompleted,
     bool? isPurchased,
+    bool? purchaseDeducted,
     String? category,
   }) {
     return WishlistItem(
@@ -98,6 +104,7 @@ class WishlistItem {
       updatedAt: updatedAt ?? this.updatedAt,
       isCompleted: isCompleted ?? this.isCompleted,
       isPurchased: isPurchased ?? this.isPurchased,
+      purchaseDeducted: purchaseDeducted ?? this.purchaseDeducted,
       category: category ?? this.category,
     );
   }
