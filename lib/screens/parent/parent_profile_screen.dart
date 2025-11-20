@@ -15,6 +15,7 @@ import 'parent_leaderboard_screen.dart';
 import '../services/notification_service.dart';
 import 'dart:io';
 import 'parent_wishlist_screen.dart';
+import 'setup_weekly_allowance_screen.dart';
 import 'package:image_picker/image_picker.dart';
 
 class ParentProfileScreen extends StatefulWidget {
@@ -691,7 +692,9 @@ class _ParentProfileScreenState extends State<ParentProfileScreen>
                     isLargeScreen,
                     isExtraSmallScreen,
                   ),
-                  SizedBox(height: isSmallScreen ? 16.h : 24.h),
+                  SizedBox(height: 16.h),
+                  _buildWeeklyAllowanceButton(),
+                  SizedBox(height: 20.h),
                   _buildGamifiedChildrenSection(
                     isTablet,
                     isDesktop,
@@ -2002,6 +2005,97 @@ class _ParentProfileScreenState extends State<ParentProfileScreen>
                         ),
                       ),
                     ],
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildWeeklyAllowanceButton() {
+    final isDisabled = _children.isEmpty;
+
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        onTap: isDisabled
+            ? null
+            : () {
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    builder: (_) =>
+                        SetUpWeeklyAllowanceScreen(children: _children),
+                  ),
+                );
+              },
+        borderRadius: BorderRadius.circular(20.r),
+        child: Opacity(
+          opacity: isDisabled ? 0.6 : 1.0,
+          child: Container(
+            width: double.infinity,
+            padding: EdgeInsets.symmetric(horizontal: 20.w, vertical: 16.h),
+            decoration: BoxDecoration(
+              gradient: const LinearGradient(
+                begin: Alignment.topLeft,
+                end: Alignment.bottomRight,
+                colors: [
+                  Color(0xFFF5F6FF), // Very light blue
+                  Color(0xFFECEFFE), // Light blue
+                ],
+              ),
+              borderRadius: BorderRadius.circular(20.r),
+              border: Border.all(color: const Color(0xFFE8EAFE), width: 1),
+              boxShadow: [
+                BoxShadow(
+                  color: Colors.black.withOpacity(0.09),
+                  blurRadius: 18,
+                  offset: Offset(0, 4),
+                ),
+              ],
+            ),
+            child: Row(
+              children: [
+                // Icon container with gradient
+                Container(
+                  padding: EdgeInsets.all(10.w),
+                  decoration: BoxDecoration(
+                    gradient: const LinearGradient(
+                      colors: [
+                        Color(0xFFA28BFE), // Purple
+                        Color(0xFF8F5CFF), // Darker purple
+                      ],
+                      begin: Alignment.topLeft,
+                      end: Alignment.bottomRight,
+                    ),
+                    borderRadius: BorderRadius.circular(12.r),
+                    boxShadow: [
+                      BoxShadow(
+                        color: const Color(0xFFA28BFE).withOpacity(0.3),
+                        blurRadius: 8,
+                        offset: Offset(0, 4),
+                      ),
+                    ],
+                  ),
+                  child: Icon(
+                    Icons.account_balance_wallet_rounded,
+                    size: 20.sp,
+                    color: Colors.white,
+                  ),
+                ),
+                SizedBox(width: 16.w),
+                // Title text
+                Expanded(
+                  child: Text(
+                    'Set Up Weekly Allowance',
+                    style: TextStyle(
+                      fontSize: 16.sp,
+                      fontWeight: FontWeight.w600,
+                      color: const Color(0xFF1C1243),
+                    ),
                   ),
                 ),
               ],
