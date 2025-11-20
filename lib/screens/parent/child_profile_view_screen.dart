@@ -1071,6 +1071,14 @@ class _ChildProfileViewScreenState extends State<ChildProfileViewScreen>
           _buildSavingGoalProgress(wallet, isTablet, isDesktop, isSmallScreen),
           SizedBox(height: 20.h),
 
+          // Savings Transactions Section
+          _buildSavingsTransactionsSection(isTablet, isDesktop, isSmallScreen),
+          SizedBox(height: 20.h),
+
+          // Spending Transactions Section
+          _buildSpendingTransactionsSection(isTablet, isDesktop, isSmallScreen),
+          SizedBox(height: 20.h),
+
           // Recent Transactions
           if (_childTransactions.isNotEmpty) ...[
             Text(
@@ -1614,6 +1622,330 @@ class _ChildProfileViewScreenState extends State<ChildProfileViewScreen>
     );
   }
 
+  // Savings Transactions Expandable Section
+  Widget _buildSavingsTransactionsSection(
+    bool isTablet,
+    bool isDesktop,
+    bool isSmallScreen,
+  ) {
+    return Container(
+      margin: EdgeInsets.only(bottom: 16.h),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(isDesktop ? 16.r : 12.r),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.05),
+            blurRadius: 10,
+            offset: const Offset(0, 2),
+          ),
+        ],
+      ),
+      child: ExpansionTile(
+        initiallyExpanded: true,
+        title: Row(
+          children: [
+            Icon(
+              Icons.savings,
+              color: const Color(0xFF10B981),
+              size: isDesktop
+                  ? 24.sp
+                  : isTablet
+                  ? 22.sp
+                  : isSmallScreen
+                  ? 18.sp
+                  : 20.sp,
+            ),
+            SizedBox(width: 12.w),
+            Text(
+              'Savings Transactions',
+              style: TextStyle(
+                fontSize: isDesktop
+                    ? 18.sp
+                    : isTablet
+                    ? 16.sp
+                    : isSmallScreen
+                    ? 14.sp
+                    : 15.sp,
+                fontWeight: FontWeight.bold,
+                color: Colors.black87,
+              ),
+            ),
+          ],
+        ),
+        children: [
+          Padding(
+            padding: EdgeInsets.symmetric(
+              horizontal: isDesktop
+                  ? 16.w
+                  : isTablet
+                  ? 14.w
+                  : 12.w,
+              vertical: 8.h,
+            ),
+            child: StreamBuilder<List<app_transaction.Transaction>>(
+              stream: FirebaseService.getChildWalletTransactionsStream(
+                widget.parentId,
+                widget.child.id,
+                'saving',
+              ),
+              builder: (context, snapshot) {
+                if (snapshot.connectionState == ConnectionState.waiting) {
+                  return Container(
+                    width: double.infinity,
+                    padding: EdgeInsets.all(40.w),
+                    decoration: BoxDecoration(
+                      color: Colors.white,
+                      borderRadius: BorderRadius.circular(16.r),
+                    ),
+                    child: Center(
+                      child: CircularProgressIndicator(
+                        color: const Color(0xFFFF8A00),
+                      ),
+                    ),
+                  );
+                }
+
+                if (snapshot.hasError) {
+                  return Container(
+                    width: double.infinity,
+                    padding: EdgeInsets.all(40.w),
+                    decoration: BoxDecoration(
+                      color: Colors.white,
+                      borderRadius: BorderRadius.circular(16.r),
+                    ),
+                    child: Column(
+                      children: [
+                        Icon(
+                          Icons.error_outline,
+                          size: 64.sp,
+                          color: const Color(0xFFFF6A5D),
+                        ),
+                        SizedBox(height: 16.h),
+                        Text(
+                          'Error loading transactions',
+                          style: TextStyle(
+                            fontSize: 16.sp,
+                            fontWeight: FontWeight.w500,
+                            color: const Color(0xFFFF6A5D),
+                            fontFamily: 'SF Pro Text',
+                          ),
+                        ),
+                      ],
+                    ),
+                  );
+                }
+
+                final transactions = snapshot.data ?? [];
+
+                if (transactions.isEmpty) {
+                  return Container(
+                    width: double.infinity,
+                    padding: EdgeInsets.all(40.w),
+                    decoration: BoxDecoration(
+                      color: Colors.white,
+                      borderRadius: BorderRadius.circular(16.r),
+                    ),
+                    child: Column(
+                      children: [
+                        Icon(
+                          Icons.receipt_long,
+                          size: 64.sp,
+                          color: const Color(0xFFA29EB6),
+                        ),
+                        SizedBox(height: 16.h),
+                        Text(
+                          'No savings transactions yet',
+                          style: TextStyle(
+                            fontSize: 16.sp,
+                            fontWeight: FontWeight.w500,
+                            color: const Color(0xFFA29EB6),
+                            fontFamily: 'SF Pro Text',
+                          ),
+                        ),
+                      ],
+                    ),
+                  );
+                }
+
+                return Column(
+                  children: transactions
+                      .map(
+                        (transaction) =>
+                            _buildWalletTransactionItem(transaction),
+                      )
+                      .toList(),
+                );
+              },
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  // Spending Transactions Expandable Section
+  Widget _buildSpendingTransactionsSection(
+    bool isTablet,
+    bool isDesktop,
+    bool isSmallScreen,
+  ) {
+    return Container(
+      margin: EdgeInsets.only(bottom: 16.h),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(isDesktop ? 16.r : 12.r),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.05),
+            blurRadius: 10,
+            offset: const Offset(0, 2),
+          ),
+        ],
+      ),
+      child: ExpansionTile(
+        initiallyExpanded: false,
+        title: Row(
+          children: [
+            Icon(
+              Icons.shopping_cart,
+              color: const Color(0xFFEF4444),
+              size: isDesktop
+                  ? 24.sp
+                  : isTablet
+                  ? 22.sp
+                  : isSmallScreen
+                  ? 18.sp
+                  : 20.sp,
+            ),
+            SizedBox(width: 12.w),
+            Text(
+              'Spending Transactions',
+              style: TextStyle(
+                fontSize: isDesktop
+                    ? 18.sp
+                    : isTablet
+                    ? 16.sp
+                    : isSmallScreen
+                    ? 14.sp
+                    : 15.sp,
+                fontWeight: FontWeight.bold,
+                color: Colors.black87,
+              ),
+            ),
+          ],
+        ),
+        children: [
+          Padding(
+            padding: EdgeInsets.symmetric(
+              horizontal: isDesktop
+                  ? 16.w
+                  : isTablet
+                  ? 14.w
+                  : 12.w,
+              vertical: 8.h,
+            ),
+            child: StreamBuilder<List<app_transaction.Transaction>>(
+              stream: FirebaseService.getChildWalletTransactionsStream(
+                widget.parentId,
+                widget.child.id,
+                'spending',
+              ),
+              builder: (context, snapshot) {
+                if (snapshot.connectionState == ConnectionState.waiting) {
+                  return Container(
+                    width: double.infinity,
+                    padding: EdgeInsets.all(40.w),
+                    decoration: BoxDecoration(
+                      color: Colors.white,
+                      borderRadius: BorderRadius.circular(16.r),
+                    ),
+                    child: Center(
+                      child: CircularProgressIndicator(
+                        color: const Color(0xFFFF8A00),
+                      ),
+                    ),
+                  );
+                }
+
+                if (snapshot.hasError) {
+                  return Container(
+                    width: double.infinity,
+                    padding: EdgeInsets.all(40.w),
+                    decoration: BoxDecoration(
+                      color: Colors.white,
+                      borderRadius: BorderRadius.circular(16.r),
+                    ),
+                    child: Column(
+                      children: [
+                        Icon(
+                          Icons.error_outline,
+                          size: 64.sp,
+                          color: const Color(0xFFFF6A5D),
+                        ),
+                        SizedBox(height: 16.h),
+                        Text(
+                          'Error loading transactions',
+                          style: TextStyle(
+                            fontSize: 16.sp,
+                            fontWeight: FontWeight.w500,
+                            color: const Color(0xFFFF6A5D),
+                            fontFamily: 'SF Pro Text',
+                          ),
+                        ),
+                      ],
+                    ),
+                  );
+                }
+
+                final transactions = snapshot.data ?? [];
+
+                if (transactions.isEmpty) {
+                  return Container(
+                    width: double.infinity,
+                    padding: EdgeInsets.all(40.w),
+                    decoration: BoxDecoration(
+                      color: Colors.white,
+                      borderRadius: BorderRadius.circular(16.r),
+                    ),
+                    child: Column(
+                      children: [
+                        Icon(
+                          Icons.receipt_long,
+                          size: 64.sp,
+                          color: const Color(0xFFA29EB6),
+                        ),
+                        SizedBox(height: 16.h),
+                        Text(
+                          'No spending transactions yet',
+                          style: TextStyle(
+                            fontSize: 16.sp,
+                            fontWeight: FontWeight.w500,
+                            color: const Color(0xFFA29EB6),
+                            fontFamily: 'SF Pro Text',
+                          ),
+                        ),
+                      ],
+                    ),
+                  );
+                }
+
+                return Column(
+                  children: transactions
+                      .map(
+                        (transaction) =>
+                            _buildWalletTransactionItem(transaction),
+                      )
+                      .toList(),
+                );
+              },
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
   Widget _buildWalletStatistics(
     Wallet wallet,
     bool isTablet,
@@ -1985,5 +2317,203 @@ class _ChildProfileViewScreenState extends State<ChildProfileViewScreen>
         ],
       ),
     );
+  }
+
+  // Transaction Item Widget (copied from SpendingWalletScreen)
+  Widget _buildWalletTransactionItem(app_transaction.Transaction transaction) {
+    return Container(
+      margin: EdgeInsets.only(bottom: 12.h),
+      padding: EdgeInsets.all(16.w),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(12.r),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.05),
+            blurRadius: 8.r,
+            offset: Offset(0, 2.h),
+          ),
+        ],
+      ),
+      child: Row(
+        children: [
+          // Category Icon
+          Container(
+            width: 40.w,
+            height: 40.w,
+            decoration: BoxDecoration(
+              color: _getCategoryColor(
+                transaction.category,
+              ).withValues(alpha: 0.1),
+              borderRadius: BorderRadius.circular(8.r),
+            ),
+            child: Icon(
+              _getCategoryIcon(transaction.category),
+              color: _getCategoryColor(transaction.category),
+              size: 20.sp,
+            ),
+          ),
+          SizedBox(width: 12.w),
+
+          // Transaction Details
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  transaction.description,
+                  style: TextStyle(
+                    fontSize: 14.sp,
+                    fontWeight: FontWeight.w600,
+                    color: const Color(0xFF1C1243),
+                    fontFamily: 'SF Pro Text',
+                  ),
+                ),
+                SizedBox(height: 2.h),
+                Text(
+                  _getCategoryName(transaction.category),
+                  style: TextStyle(
+                    fontSize: 12.sp,
+                    color: const Color(0xFFA29EB6),
+                    fontFamily: 'SF Pro Text',
+                  ),
+                ),
+                SizedBox(height: 2.h),
+                Text(
+                  _formatDate(transaction.date),
+                  style: TextStyle(
+                    fontSize: 12.sp,
+                    color: const Color(0xFFA29EB6),
+                    fontFamily: 'SF Pro Text',
+                  ),
+                ),
+              ],
+            ),
+          ),
+
+          // Amount
+          Text(
+            _getTransactionAmountText(transaction),
+            style: TextStyle(
+              fontSize: 16.sp,
+              fontWeight: FontWeight.bold,
+              color: _getTransactionAmountColor(transaction),
+              fontFamily: 'SF Pro Text',
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  // Helper methods (copied from SpendingWalletScreen)
+  Color _getCategoryColor(String category) {
+    switch (category) {
+      case 'food':
+        return const Color(0xFFFF8A00);
+      case 'gaming':
+        return const Color(0xFF643FDB);
+      case 'movies':
+        return const Color(0xFF47C272);
+      default:
+        return const Color(0xFFA29EB6);
+    }
+  }
+
+  IconData _getCategoryIcon(String category) {
+    switch (category) {
+      case 'food':
+        return Icons.restaurant;
+      case 'gaming':
+        return Icons.sports_esports;
+      case 'movies':
+        return Icons.movie;
+      default:
+        return Icons.shopping_bag;
+    }
+  }
+
+  String _getCategoryName(String category) {
+    switch (category) {
+      case 'food':
+        return 'Food & Dining';
+      case 'gaming':
+        return 'Gaming';
+      case 'movies':
+        return 'Entertainment';
+      default:
+        return 'Other';
+    }
+  }
+
+  String _formatDate(DateTime date) {
+    final now = DateTime.now();
+    final difference = now.difference(date);
+
+    if (difference.inDays == 0) {
+      return 'Today';
+    } else if (difference.inDays == 1) {
+      return 'Yesterday';
+    } else if (difference.inDays < 7) {
+      return '${difference.inDays} days ago';
+    } else {
+      return '${date.day}/${date.month}/${date.year}';
+    }
+  }
+
+  String _getTransactionAmountText(app_transaction.Transaction transaction) {
+    // Check if this is a transfer FROM spending TO saving (negative/red)
+    if (transaction.fromWallet == 'spending' &&
+        transaction.toWallet == 'saving') {
+      return '-${transaction.amount.toStringAsFixed(2)} SAR';
+    }
+
+    // Check if this is a transfer FROM saving TO spending (positive/green)
+    if (transaction.fromWallet == 'saving' &&
+        transaction.toWallet == 'spending') {
+      return '+${transaction.amount.toStringAsFixed(2)} SAR';
+    }
+
+    // Check if this is a wallet-to-wallet transaction from total (positive/green)
+    if (transaction.fromWallet == 'total' &&
+        transaction.toWallet == 'spending') {
+      return '+${transaction.amount.toStringAsFixed(2)} SAR';
+    }
+
+    // Check if this is wishlist spending (negative/red)
+    if (transaction.category == 'wishlist') {
+      return '-${transaction.amount.toStringAsFixed(2)} SAR';
+    }
+
+    // Only show wallet-to-wallet transactions, no external spending
+    return '+${transaction.amount.toStringAsFixed(2)} SAR';
+  }
+
+  Color _getTransactionAmountColor(app_transaction.Transaction transaction) {
+    // Check if this is a transfer FROM spending TO saving (negative/red)
+    if (transaction.fromWallet == 'spending' &&
+        transaction.toWallet == 'saving') {
+      return const Color(0xFFFF6A5D); // Red
+    }
+
+    // Check if this is a transfer FROM saving TO spending (positive/green)
+    if (transaction.fromWallet == 'saving' &&
+        transaction.toWallet == 'spending') {
+      return const Color(0xFF47C272); // Green
+    }
+
+    // Check if this is a wallet-to-wallet transaction from total (positive/green)
+    if (transaction.fromWallet == 'total' &&
+        transaction.toWallet == 'spending') {
+      return const Color(0xFF47C272); // Green
+    }
+
+    // Check if this is wishlist spending (negative/red)
+    if (transaction.category == 'wishlist') {
+      return const Color(0xFFFF6A5D); // Red
+    }
+
+    // Only show wallet-to-wallet transactions as positive/green
+    return const Color(0xFF47C272); // Green
   }
 }
