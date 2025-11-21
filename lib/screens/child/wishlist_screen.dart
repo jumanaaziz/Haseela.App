@@ -393,27 +393,20 @@ class _WishlistScreenState extends State<WishlistScreen>
         final items = snapshot.data ?? [];
 
         if (items.isEmpty) {
-
           return LayoutBuilder(
             builder: (context, constraints) {
               final availableHeight = constraints.maxHeight.isFinite
                   ? constraints.maxHeight
                   : MediaQuery.of(context).size.height;
-              final minContentHeight =
-                  math.max(0.0, availableHeight - 48.h);
+              final minContentHeight = math.max(0.0, availableHeight - 48.h);
 
               return SingleChildScrollView(
                 physics: const BouncingScrollPhysics(
                   parent: AlwaysScrollableScrollPhysics(),
                 ),
-                padding: EdgeInsets.symmetric(
-                  horizontal: 24.w,
-                  vertical: 24.h,
-                ),
+                padding: EdgeInsets.symmetric(horizontal: 24.w, vertical: 24.h),
                 child: ConstrainedBox(
-                  constraints: BoxConstraints(
-                    minHeight: minContentHeight,
-                  ),
+                  constraints: BoxConstraints(minHeight: minContentHeight),
                   child: Column(
                     mainAxisAlignment: MainAxisAlignment.center,
                     children: [
@@ -503,10 +496,6 @@ class _WishlistScreenState extends State<WishlistScreen>
                 ),
               );
             },
-          );
-        }
-
-
           );
         }
 
@@ -893,10 +882,7 @@ class _WishlistScreenState extends State<WishlistScreen>
       decoration: BoxDecoration(
         gradient: LinearGradient(colors: gradientColors),
         borderRadius: BorderRadius.circular(16.r),
-        border: Border.all(
-          color: borderColor,
-          width: 1,
-        ),
+        border: Border.all(color: borderColor, width: 1),
         boxShadow: [
           if (isPurchased || canAfford)
             BoxShadow(
@@ -909,11 +895,7 @@ class _WishlistScreenState extends State<WishlistScreen>
       child: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
-          Icon(
-            iconData,
-            size: 14.sp,
-            color: foregroundColor,
-          ),
+          Icon(iconData, size: 14.sp, color: foregroundColor),
           SizedBox(width: 6.w),
           Text(
             label,
@@ -1398,5 +1380,4 @@ class _WishlistScreenState extends State<WishlistScreen>
       ),
     );
   }
-
 }
