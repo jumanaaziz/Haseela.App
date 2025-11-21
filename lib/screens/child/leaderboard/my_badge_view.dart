@@ -42,6 +42,12 @@ class _MyBadgeViewState extends State<MyBadgeView> {
         widget.parentId,
         widget.childId,
       );
+      // Debug: Print badge image paths
+      for (final badge in badges) {
+        print(
+          '📛 Badge: ${badge.name} - Image: ${badge.imageAsset} - Unlocked: ${badge.isUnlocked}',
+        );
+      }
       setState(() {
         _badges = badges;
       });
@@ -192,6 +198,16 @@ class _MyBadgeViewState extends State<MyBadgeView> {
               fontFamily: 'SPProText',
             ),
           ),
+          SizedBox(height: 4.h),
+          // Clarification that level depends on saving money
+          Text(
+            'Based on money saved',
+            style: TextStyle(
+              fontSize: 14.sp,
+              color: const Color(0xFF6B7280),
+              fontFamily: 'SPProText',
+            ),
+          ),
           SizedBox(height: 8.h),
 
           // Points
@@ -286,7 +302,8 @@ class _MyBadgeViewState extends State<MyBadgeView> {
               crossAxisCount: 3,
               crossAxisSpacing: 12.w,
               mainAxisSpacing: 12.h,
-              childAspectRatio: 0.85,
+              childAspectRatio:
+                  0.75, // Increased vertical space for progress bar
             ),
             itemCount: _badges.length,
             itemBuilder: (context, index) {
@@ -294,171 +311,242 @@ class _MyBadgeViewState extends State<MyBadgeView> {
               return _buildBadgeCard(badge);
             },
           ),
+          SizedBox(height: 32.h),
+
+          // Points Information Section
+          Container(
+            padding: EdgeInsets.all(20.w),
+            decoration: BoxDecoration(
+              color: const Color(0xFFF3F4F6),
+              borderRadius: BorderRadius.circular(16.r),
+              border: Border.all(color: const Color(0xFFE2E8F0), width: 1),
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  children: [
+                    Icon(
+                      Icons.stars,
+                      size: 24.sp,
+                      color: const Color(0xFFFFD700),
+                    ),
+                    SizedBox(width: 8.w),
+                    Text(
+                      'How Points Work',
+                      style: TextStyle(
+                        fontSize: 18.sp,
+                        fontWeight: FontWeight.bold,
+                        color: const Color(0xFF1C1243),
+                        fontFamily: 'SPProText',
+                      ),
+                    ),
+                  ],
+                ),
+                SizedBox(height: 12.h),
+                Text(
+                  'You earn points by saving money!',
+                  style: TextStyle(
+                    fontSize: 16.sp,
+                    fontWeight: FontWeight.w600,
+                    color: const Color(0xFF1C1243),
+                    fontFamily: 'SPProText',
+                  ),
+                ),
+                SizedBox(height: 8.h),
+                Text(
+                  '• Every 100 SAR saved = 10 points\n• Your level increases based on how much money you save\n• Keep saving to level up and unlock new badges!',
+                  style: TextStyle(
+                    fontSize: 14.sp,
+                    color: const Color(0xFF6B7280),
+                    fontFamily: 'SPProText',
+                    height: 1.5,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          SizedBox(height: 20.h),
         ],
       ),
     );
   }
 
   Widget _buildBadgeCard(badge_model.Badge badge) {
-    return Container(
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(16.r),
-        border: Border.all(
-          color: badge.isUnlocked ? const Color(0xFFFFD700) : Colors.grey[300]!,
-          width: badge.isUnlocked ? 2.w : 1.w,
-        ),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withOpacity(0.05),
-            blurRadius: 8.r,
-            offset: Offset(0, 2.h),
-          ),
-        ],
+    return FutureBuilder<Map<String, dynamic>>(
+      future: BadgeService.getBadgeProgress(
+        widget.parentId,
+        widget.childId,
+        badge.type,
       ),
-      child: Column(
-        mainAxisAlignment: MainAxisAlignment.center,
-        children: [
-          // Badge Image
-          Container(
-            width: 70.w,
-            height: 70.w,
-            decoration: BoxDecoration(
+      builder: (context, snapshot) {
+        final progressData =
+            snapshot.data ?? {'current': 0, 'target': 1, 'progress': 0.0};
+        final current = progressData['current'] as num;
+        final target = progressData['target'] as num;
+        final progress = (progressData['progress'] as num).toDouble();
+        final isRankBased = progressData['isRankBased'] as bool? ?? false;
+        final rank = progressData['rank'] as int? ?? 0;
+        final totalPlayers = progressData['totalPlayers'] as int? ?? 0;
+
+        return Container(
+          decoration: BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.circular(16.r),
+            border: Border.all(
               color: badge.isUnlocked
-                  ? Colors.transparent
-                  : Colors.grey[200]!.withOpacity(0.5),
-              borderRadius: BorderRadius.circular(12.r),
+                  ? const Color(0xFFFFD700)
+                  : Colors.grey[300]!,
+              width: badge.isUnlocked ? 2.w : 1.w,
             ),
-            child: badge.imageAsset.isEmpty
-                ? _buildDefaultBadgeIcon(badge.isUnlocked)
-                : badge.isUnlocked
-                ? ClipRRect(
-                    borderRadius: BorderRadius.circular(12.r),
-                    child: Image.asset(
-                      badge.imageAsset,
-                      width: 70.w,
-                      height: 70.w,
-                      fit: BoxFit.contain,
-                      errorBuilder: (context, error, stackTrace) {
-                        print('Error loading badge image: ${badge.imageAsset}');
-                        print('Error: $error');
-                        return _buildDefaultBadgeIcon(true);
-                      },
-                    ),
-                  )
-                : Stack(
-                    children: [
-                      ClipRRect(
+            boxShadow: [
+              BoxShadow(
+                color: Colors.black.withOpacity(0.05),
+                blurRadius: 8.r,
+                offset: Offset(0, 2.h),
+              ),
+            ],
+          ),
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              // Badge Image
+              Container(
+                width: 70.w,
+                height: 70.w,
+                decoration: BoxDecoration(
+                  color: badge.isUnlocked
+                      ? Colors.transparent
+                      : Colors.grey[200]!.withOpacity(0.5),
+                  borderRadius: BorderRadius.circular(12.r),
+                ),
+                child: badge.imageAsset.isEmpty
+                    ? _buildDefaultBadgeIcon(badge.isUnlocked)
+                    : badge.isUnlocked
+                    ? ClipRRect(
                         borderRadius: BorderRadius.circular(12.r),
                         child: Image.asset(
                           badge.imageAsset,
                           width: 70.w,
                           height: 70.w,
                           fit: BoxFit.contain,
-                          color: Colors.grey[400],
-                          colorBlendMode: BlendMode.saturation,
                           errorBuilder: (context, error, stackTrace) {
-                            return _buildDefaultBadgeIcon(false);
+                            print(
+                              '❌ Error loading badge image: ${badge.imageAsset}',
+                            );
+                            print('❌ Error details: $error');
+                            print('❌ Stack trace: $stackTrace');
+                            return _buildDefaultBadgeIcon(true);
                           },
                         ),
-                      ),
-                      Positioned.fill(
-                        child: Container(
-                          decoration: BoxDecoration(
-                            color: Colors.black.withOpacity(0.5),
+                      )
+                    : Stack(
+                        children: [
+                          ClipRRect(
                             borderRadius: BorderRadius.circular(12.r),
+                            child: Image.asset(
+                              badge.imageAsset,
+                              width: 70.w,
+                              height: 70.w,
+                              fit: BoxFit.contain,
+                              color: Colors.grey[400],
+                              colorBlendMode: BlendMode.saturation,
+                              errorBuilder: (context, error, stackTrace) {
+                                return _buildDefaultBadgeIcon(false);
+                              },
+                            ),
                           ),
-                          child: Icon(
-                            Icons.lock,
-                            size: 24.sp,
-                            color: Colors.white,
+                          Positioned.fill(
+                            child: Container(
+                              decoration: BoxDecoration(
+                                color: Colors.black.withOpacity(0.5),
+                                borderRadius: BorderRadius.circular(12.r),
+                              ),
+                              child: Icon(
+                                Icons.lock,
+                                size: 24.sp,
+                                color: Colors.white,
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+              ),
+              SizedBox(height: 6.h),
+
+              // Badge Name
+              Padding(
+                padding: EdgeInsets.symmetric(horizontal: 4.w),
+                child: Text(
+                  badge.name,
+                  textAlign: TextAlign.center,
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                    fontSize: 10.sp,
+                    fontWeight: FontWeight.w600,
+                    color: badge.isUnlocked
+                        ? const Color(0xFF1C1243)
+                        : Colors.grey[500],
+                    fontFamily: 'SPProText',
+                  ),
+                ),
+              ),
+              SizedBox(height: 6.h),
+
+              // Progress Bar (only show if not unlocked)
+              if (!badge.isUnlocked) ...[
+                Padding(
+                  padding: EdgeInsets.symmetric(horizontal: 6.w),
+                  child: Column(
+                    children: [
+                      // Progress text
+                      Text(
+                        isRankBased
+                            ? 'Rank: $rank/$totalPlayers'
+                            : '${current.toInt()}/${target.toInt()}',
+                        style: TextStyle(
+                          fontSize: 9.sp,
+                          color: Colors.grey[600],
+                          fontFamily: 'SPProText',
+                          fontWeight: FontWeight.w500,
+                        ),
+                      ),
+                      SizedBox(height: 4.h),
+                      // Progress bar
+                      ClipRRect(
+                        borderRadius: BorderRadius.circular(4.r),
+                        child: LinearProgressIndicator(
+                          value: progress,
+                          minHeight: 4.h,
+                          backgroundColor: Colors.grey[200],
+                          valueColor: AlwaysStoppedAnimation<Color>(
+                            const Color(0xFF643FDB),
                           ),
                         ),
                       ),
                     ],
                   ),
-          ),
-          SizedBox(height: 8.h),
-
-          // Badge Name
-          Padding(
-            padding: EdgeInsets.symmetric(horizontal: 4.w),
-            child: Text(
-              badge.name,
-              textAlign: TextAlign.center,
-              maxLines: 2,
-              overflow: TextOverflow.ellipsis,
-              style: TextStyle(
-                fontSize: 10.sp,
-                fontWeight: FontWeight.w600,
-                color: badge.isUnlocked
-                    ? const Color(0xFF1C1243)
-                    : Colors.grey[500],
-                fontFamily: 'SPProText',
-              ),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildStatCard(
-    String label,
-    double amount,
-    Color color,
-    IconData icon,
-  ) {
-    return Container(
-      padding: EdgeInsets.all(20.w),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(16.r),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withOpacity(0.05),
-            blurRadius: 8.r,
-            offset: Offset(0, 2.h),
-          ),
-        ],
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            children: [
-              Icon(icon, size: 24.sp, color: color),
-              SizedBox(width: 8.w),
-              Text(
-                label,
-                style: TextStyle(
-                  fontSize: 14.sp,
-                  color: const Color(0xFF6B7280),
-                  fontFamily: 'SPProText',
                 ),
-              ),
+              ] else ...[
+                // Show "Unlocked" text if badge is unlocked
+                Padding(
+                  padding: EdgeInsets.symmetric(horizontal: 4.w),
+                  child: Text(
+                    'Unlocked!',
+                    style: TextStyle(
+                      fontSize: 9.sp,
+                      color: const Color(0xFF47C272),
+                      fontFamily: 'SPProText',
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                ),
+              ],
             ],
           ),
-          SizedBox(height: 12.h),
-          Text(
-            '${amount.toStringAsFixed(0)}',
-            style: TextStyle(
-              fontSize: 24.sp,
-              fontWeight: FontWeight.bold,
-              color: color,
-              fontFamily: 'SPProText',
-            ),
-          ),
-          Text(
-            'SAR',
-            style: TextStyle(
-              fontSize: 12.sp,
-              color: const Color(0xFF6B7280),
-              fontFamily: 'SPProText',
-            ),
-          ),
-        ],
-      ),
+        );
+      },
     );
   }
 

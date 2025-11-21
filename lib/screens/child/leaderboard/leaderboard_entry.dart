@@ -9,6 +9,9 @@ class LeaderboardEntry {
   final double progressToNextLevel; // Progress to next badge (0.0 to 1.0)
   final List<RecentPurchase> recentPurchases; // Recent purchases
   final int rank;
+  final int challengeCompletions; // Number of challenge tasks completed
+  final DateTime?
+  earliestChallengeCompletion; // Earliest challenge completion date
   // test
   LeaderboardEntry({
     required this.id,
@@ -21,6 +24,8 @@ class LeaderboardEntry {
     required this.progressToNextLevel,
     required this.recentPurchases,
     required this.rank,
+    this.challengeCompletions = 0,
+    this.earliestChallengeCompletion,
   });
 
   // Badge thresholds

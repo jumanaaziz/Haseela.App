@@ -28,11 +28,24 @@ class BadgeService {
         return initialized;
       }
 
-      // Verify and migrate any outdated fields (e.g., updated names/images)
+      // Always verify and migrate to ensure image paths are up to date
       await _verifyAndMigrateBadges(parentId, childId);
 
+      // Get refreshed badges after migration
       final refreshed = await badgesRef.get();
-      return refreshed.docs.map((doc) => Badge.fromFirestore(doc)).toList();
+      final badges = refreshed.docs
+          .map((doc) => Badge.fromFirestore(doc))
+          .toList();
+
+      // Debug: Print all badge image paths
+      print('📛 Loaded ${badges.length} badges:');
+      for (final badge in badges) {
+        print(
+          '   - ${badge.name}: ${badge.imageAsset} (unlocked: ${badge.isUnlocked})',
+        );
+      }
+
+      return badges;
     } catch (e) {
       print('Error getting badges: $e');
       return Badge.getDefaultBadges();
@@ -59,6 +72,9 @@ class BadgeService {
       // Create any missing badges
       for (final def in defaults) {
         if (!existingIds.contains(def.id)) {
+          print(
+            '➕ Creating new badge: ${def.id} with image: ${def.imageAsset}',
+          );
           await badgesRef.doc(def.id).set(def.toFirestore());
         }
       }
@@ -73,7 +89,11 @@ class BadgeService {
         if ((data['description'] ?? '') != def.description) {
           updates['description'] = def.description;
         }
-        if ((data['imageAsset'] ?? '') != def.imageAsset) {
+        final currentImageAsset = (data['imageAsset'] ?? '').toString();
+        if (currentImageAsset != def.imageAsset) {
+          print(
+            '🔄 Updating badge ${def.id} imageAsset: "$currentImageAsset" → "${def.imageAsset}"',
+          );
           updates['imageAsset'] = def.imageAsset;
         }
         // Ensure type field is consistent
@@ -82,6 +102,7 @@ class BadgeService {
           updates['type'] = expectedType;
 
         if (updates.isNotEmpty) {
+          print('✅ Updating badge ${def.id} with: $updates');
           await badgesRef.doc(def.id).update(updates);
         }
       }
@@ -119,6 +140,10 @@ class BadgeService {
         return 'financial_freedom_flyer';
       case BadgeType.conquerorsCrown:
         return 'conquerors_crown';
+      case BadgeType.highPriorityHero:
+        return 'high_priority_hero';
+      case BadgeType.wishlistFulfillment:
+        return 'wishlist_fulfillment';
     }
   }
 
@@ -379,10 +404,293 @@ class BadgeService {
     }
   }
 
+  /// Check and unlock High-Priority Hero badge (4 high-priority tasks completed)
+  /// Condition: Complete 4 high-priority tasks (status = 'done', priority = 'high')
+  static Future<void> checkHighPriorityHero(
+    String parentId,
+    String childId,
+  ) async {
+    try {
+      // Get all high-priority tasks with status 'done' (approved by parent)
+      final tasksSnapshot = await _firestore
+          .collection('Parents')
+          .doc(parentId)
+          .collection('Children')
+          .doc(childId)
+          .collection('Tasks')
+          .where('status', isEqualTo: 'done')
+          .where('priority', isEqualTo: 'high')
+          .get();
+
+      final completedHighPriorityTasksCount = tasksSnapshot.docs.length;
+      print(
+        '📊 Checking "High-Priority Hero" badge: $completedHighPriorityTasksCount high-priority tasks completed',
+      );
+
+      if (completedHighPriorityTasksCount >= 4) {
+        print('✅ Unlocking "High-Priority Hero" badge - condition met!');
+        await unlockBadge(parentId, childId, BadgeType.highPriorityHero);
+      } else {
+        print(
+          '⏳ "High-Priority Hero" badge: Need ${4 - completedHighPriorityTasksCount} more high-priority tasks',
+        );
+      }
+    } catch (e) {
+      print('❌ Error checking High-Priority Hero: $e');
+    }
+  }
+
+  /// Check and unlock Wishlist Fulfillment badge (5 wishlist items purchased)
+  /// Condition: Purchase 5 wishlist items (isPurchased = true)
+  static Future<void> checkWishlistFulfillment(
+    String parentId,
+    String childId,
+  ) async {
+    try {
+      // Get all purchased wishlist items
+      final wishlistSnapshot = await _firestore
+          .collection('Parents')
+          .doc(parentId)
+          .collection('Children')
+          .doc(childId)
+          .collection('Wishlist')
+          .where('isPurchased', isEqualTo: true)
+          .get();
+
+      final purchasedItemsCount = wishlistSnapshot.docs.length;
+      print(
+        '📊 Checking "Wishlist Fulfillment" badge: $purchasedItemsCount wishlist items purchased',
+      );
+
+      if (purchasedItemsCount >= 5) {
+        print('✅ Unlocking "Wishlist Fulfillment" badge - condition met!');
+        await unlockBadge(parentId, childId, BadgeType.wishlistFulfillment);
+      } else {
+        print(
+          '⏳ "Wishlist Fulfillment" badge: Need ${5 - purchasedItemsCount} more wishlist items',
+        );
+      }
+    } catch (e) {
+      print('❌ Error checking Wishlist Fulfillment: $e');
+    }
+  }
+
   /// Check all badges (call this periodically)
   static Future<void> checkAllBadges(String parentId, String childId) async {
     await checkTenaciousTaskmaster(parentId, childId);
     await checkFinancialFreedomFlyer(parentId, childId);
     await checkConquerorsCrown(parentId, childId);
+    await checkHighPriorityHero(parentId, childId);
+    await checkWishlistFulfillment(parentId, childId);
+  }
+
+  /// Get progress for a badge (current progress and target)
+  /// Returns a map with 'current', 'target', and 'progress' (0.0 to 1.0)
+  static Future<Map<String, dynamic>> getBadgeProgress(
+    String parentId,
+    String childId,
+    BadgeType badgeType,
+  ) async {
+    try {
+      switch (badgeType) {
+        case BadgeType.tenaciousTaskmaster:
+          final tasksSnapshot = await _firestore
+              .collection('Parents')
+              .doc(parentId)
+              .collection('Children')
+              .doc(childId)
+              .collection('Tasks')
+              .where('status', isEqualTo: 'done')
+              .get();
+          final current = tasksSnapshot.docs.length;
+          const target = 10;
+          return {
+            'current': current,
+            'target': target,
+            'progress': (current / target).clamp(0.0, 1.0),
+          };
+
+        case BadgeType.financialFreedomFlyer:
+          final wallet = await FirebaseService.getChildWallet(
+            parentId,
+            childId,
+          );
+          final current = wallet?.savingBalance ?? 0.0;
+          const target = 100.0;
+          return {
+            'current': current,
+            'target': target,
+            'progress': (current / target).clamp(0.0, 1.0),
+          };
+
+        case BadgeType.highPriorityHero:
+          final tasksSnapshot = await _firestore
+              .collection('Parents')
+              .doc(parentId)
+              .collection('Children')
+              .doc(childId)
+              .collection('Tasks')
+              .where('status', isEqualTo: 'done')
+              .where('priority', isEqualTo: 'high')
+              .get();
+          final current = tasksSnapshot.docs.length;
+          const target = 4;
+          return {
+            'current': current,
+            'target': target,
+            'progress': (current / target).clamp(0.0, 1.0),
+          };
+
+        case BadgeType.wishlistFulfillment:
+          final wishlistSnapshot = await _firestore
+              .collection('Parents')
+              .doc(parentId)
+              .collection('Children')
+              .doc(childId)
+              .collection('Wishlist')
+              .where('isPurchased', isEqualTo: true)
+              .get();
+          final current = wishlistSnapshot.docs.length;
+          const target = 5;
+          return {
+            'current': current,
+            'target': target,
+            'progress': (current / target).clamp(0.0, 1.0),
+          };
+
+        case BadgeType.conquerorsCrown:
+          // For conqueror's crown, we show rank-based progress
+          // Get all children for this parent
+          final childrenSnapshot = await _firestore
+              .collection('Parents')
+              .doc(parentId)
+              .collection('Children')
+              .get();
+
+          if (childrenSnapshot.docs.isEmpty) {
+            return {
+              'current': 0,
+              'target': 1,
+              'progress': 0.0,
+              'isRankBased': true,
+              'rank': 0,
+              'totalPlayers': 0,
+            };
+          }
+
+          // Calculate challenge completions for the week
+          final now = DateTime.now();
+          var weekStart = now.subtract(Duration(days: now.weekday - 1));
+          weekStart = DateTime(weekStart.year, weekStart.month, weekStart.day);
+
+          final Map<String, Map<String, dynamic>> childChallengeData = {};
+
+          for (var childDoc in childrenSnapshot.docs) {
+            final childIdForCheck = childDoc.id;
+
+            final doneTasks = await _firestore
+                .collection('Parents')
+                .doc(parentId)
+                .collection('Children')
+                .doc(childIdForCheck)
+                .collection('Tasks')
+                .where('isChallenge', isEqualTo: true)
+                .where('status', isEqualTo: 'done')
+                .get();
+
+            final pendingTasks = await _firestore
+                .collection('Parents')
+                .doc(parentId)
+                .collection('Children')
+                .doc(childIdForCheck)
+                .collection('Tasks')
+                .where('isChallenge', isEqualTo: true)
+                .where('status', isEqualTo: 'pending')
+                .get();
+
+            final allCompletedTasks = [...doneTasks.docs, ...pendingTasks.docs];
+
+            DateTime? earliestCompletion;
+            int completedCount = 0;
+
+            if (allCompletedTasks.isNotEmpty) {
+              for (var taskDoc in allCompletedTasks) {
+                final taskData = taskDoc.data();
+                if (taskData['completedDate'] != null) {
+                  final completedDate = (taskData['completedDate'] as Timestamp)
+                      .toDate();
+                  if (completedDate.isAfter(
+                    weekStart.subtract(const Duration(seconds: 1)),
+                  )) {
+                    if (earliestCompletion == null ||
+                        completedDate.isBefore(earliestCompletion)) {
+                      earliestCompletion = completedDate;
+                    }
+                    completedCount++;
+                  }
+                }
+              }
+            }
+
+            childChallengeData[childIdForCheck] = {
+              'completedCount': completedCount,
+              'earliestCompletion': earliestCompletion ?? DateTime.now(),
+            };
+          }
+
+          // Sort by count, then by speed
+          final sorted = childChallengeData.entries.toList();
+          sorted.sort((a, b) {
+            final aCount = a.value['completedCount'] as int;
+            final bCount = b.value['completedCount'] as int;
+            if (bCount != aCount) {
+              return bCount.compareTo(aCount);
+            }
+            if (aCount > 0 && bCount > 0) {
+              final aDate = a.value['earliestCompletion'] as DateTime;
+              final bDate = b.value['earliestCompletion'] as DateTime;
+              return aDate.compareTo(bDate);
+            }
+            return a.key.compareTo(b.key);
+          });
+
+          final currentRank = sorted.indexWhere((e) => e.key == childId) + 1;
+          final totalPlayers = sorted.length;
+          final currentCount =
+              childChallengeData[childId]?['completedCount'] as int? ?? 0;
+          final firstCount = sorted.isNotEmpty
+              ? (sorted.first.value['completedCount'] as int)
+              : 0;
+
+          // Progress: 1.0 if rank 1 and unique, otherwise based on how close to first
+          double progress = 0.0;
+          if (currentRank == 1 && totalPlayers > 0) {
+            // Check if unique first place (no tie)
+            final secondCount = sorted.length > 1
+                ? (sorted[1].value['completedCount'] as int)
+                : 0;
+            if (currentCount > secondCount && currentCount > 0) {
+              progress = 1.0; // Unique first place
+            } else if (currentCount > 0) {
+              progress = 0.9; // Tied for first
+            }
+          } else if (firstCount > 0) {
+            // Progress based on how close to first place
+            progress = (currentCount / (firstCount + 1)).clamp(0.0, 0.99);
+          }
+
+          return {
+            'current': currentCount,
+            'target': firstCount + 1,
+            'progress': progress,
+            'isRankBased': true,
+            'rank': currentRank,
+            'totalPlayers': totalPlayers,
+          };
+      }
+    } catch (e) {
+      print('Error getting badge progress: $e');
+      return {'current': 0, 'target': 1, 'progress': 0.0};
+    }
   }
 }

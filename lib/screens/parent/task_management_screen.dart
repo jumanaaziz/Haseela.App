@@ -13,6 +13,7 @@ import '../../widgets/custom_bottom_nav.dart';
 import 'parent_profile_screen.dart';
 import 'parent_leaderboard_screen.dart';
 import 'parent_wishlist_screen.dart';
+import '../services/badge_service.dart';
 
 class TaskManagementScreen extends StatefulWidget {
   const TaskManagementScreen({super.key});
@@ -1702,6 +1703,14 @@ class _TaskDetailsBottomSheetState extends State<TaskDetailsBottomSheet>
       );
 
       print('✅ Task approval completed - Total Balance updated');
+
+      // Step 7️⃣ Check badges after task approval
+      // Check if this was a high-priority task
+      if (task.priority.toLowerCase() == 'high') {
+        await BadgeService.checkHighPriorityHero(parentId, widget.childId);
+      }
+      // Always check all badges after task approval
+      await BadgeService.checkAllBadges(parentId, widget.childId);
     } catch (e, stackTrace) {
       // Close loading dialog if open
       if (Navigator.canPop(context)) Navigator.pop(context);

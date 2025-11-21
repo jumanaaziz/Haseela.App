@@ -4,6 +4,8 @@ enum BadgeType {
   tenaciousTaskmaster, // 10 tasks completed
   financialFreedomFlyer, // 100 SAR saved
   conquerorsCrown, // First place in challenge
+  highPriorityHero, // 4 high-priority tasks completed
+  wishlistFulfillment, // 5 wishlist items purchased
 }
 
 // test
@@ -79,6 +81,22 @@ class Badge {
         name: 'Win 1st in Challenge',
         description: 'Win first place in a challenge',
         imageAsset: 'assets/badges/conquerors_crown.png',
+        isUnlocked: false,
+      ),
+      Badge(
+        id: 'high_priority_hero',
+        type: BadgeType.highPriorityHero,
+        name: 'High-Priority Hero',
+        description: 'Complete 4 high-priority tasks',
+        imageAsset: 'assets/badges/high-piro.png',
+        isUnlocked: false,
+      ),
+      Badge(
+        id: 'wishlist_fulfillment',
+        type: BadgeType.wishlistFulfillment,
+        name: 'Wishlist Fulfillment',
+        description: 'Purchase 5 items from wishlist',
+        imageAsset: 'assets/badges/buy5-wishlist.png',
         isUnlocked: false,
       ),
     ];

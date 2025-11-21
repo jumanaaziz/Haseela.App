@@ -83,7 +83,11 @@ flutter:
   assets:
     - assets/icons/riyal.png
     - assets/images/logo.png
-    - assets/badges/
+    - assets/badges/tenacious_taskmaster.png
+    - assets/badges/financial_freedom_flyer.png
+    - assets/badges/conquerors_crown.png
+    - assets/badges/high-piro.png
+    - assets/badges/buy5-wishlist.png
 
   # To add assets to your application, add an assets section, like this:
   # assets:

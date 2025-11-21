@@ -191,6 +191,7 @@ class _ParentLeaderboardScreenState extends State<ParentLeaderboardScreen> {
       // Then, get completed tasks (pending or done) for leaderboard calculations
       // pending = child completed, waiting for approval
       // done = parent approved
+      final Map<String, ParentLeaderboardEntry> entriesMap = {};
       final taskQueries = children.map((child) async {
         final completedTasksSnapshot = await FirebaseFirestore.instance
             .collection("Parents")
@@ -202,15 +203,15 @@ class _ParentLeaderboardScreenState extends State<ParentLeaderboardScreen> {
             .where('status', whereIn: ['pending', 'done'])
             .get();
 
-        print('     - Approved tasks: ${approvedTasksSnapshot.docs.length}');
+        print('     - Approved tasks: ${completedTasksSnapshot.docs.length}');
 
         // Calculate score based on when child completed the task (completedDate)
         // NOT based on when parent approved it - ranking is by completion time
         DateTime? earliestCompletion;
         int completedCount = 0;
 
-        if (approvedTasksSnapshot.docs.isNotEmpty) {
-          for (var taskDoc in approvedTasksSnapshot.docs) {
+        if (completedTasksSnapshot.docs.isNotEmpty) {
+          for (var taskDoc in completedTasksSnapshot.docs) {
             final taskData = taskDoc.data() as Map<String, dynamic>?;
 
             // Debug: print task details
@@ -245,16 +246,44 @@ class _ParentLeaderboardScreenState extends State<ParentLeaderboardScreen> {
 
         // Always add entry, even if child has 0 tasks
         // This allows showing all children when challenge exists but no one completed yet
-        print(
-          '   ✓ Adding entry: $childName with $completedCount approved completion(s)',
+        final childName = '${child.firstName} ${child.lastName}';
+        final childAvatar = child.avatar;
+
+        // Get wallet to calculate points based on money saved
+        final wallet = await FirebaseService.getChildWallet(_uid, child.id);
+        final totalSaved = wallet?.savingBalance ?? 0.0;
+        final totalSpent = wallet?.spendingBalance ?? 0.0;
+
+        // Calculate points based on money saved (same as child leaderboard)
+        final points = LeaderboardEntry.calculatePoints(totalSaved);
+        final currentLevel = LeaderboardEntry.calculateLevel(totalSaved);
+        final progress = LeaderboardEntry.calculateProgressToNextLevel(
+          totalSaved,
         );
-        entriesMap[childId] = ParentLeaderboardEntry(
-          childId: childId,
+
+        print(
+          '   ✓ Adding entry: $childName with $completedCount approved completion(s), ${totalSaved.toStringAsFixed(0)} SAR saved, $points points',
+        );
+        entriesMap[child.id] = ParentLeaderboardEntry(
+          childId: child.id,
           childName: childName,
           childAvatar: childAvatar,
           completedCount: completedCount,
           earliestCompletion: earliestCompletion ?? DateTime.now(),
+          totalSaved: totalSaved,
+          totalSpent: totalSpent,
+          points: points,
+          currentLevel: currentLevel,
+          progressToNextLevel: progress,
+          recentPurchases: [],
         );
+        return entriesMap;
+      }).toList();
+
+      final taskResults = await Future.wait(taskQueries);
+      final Map<String, ParentLeaderboardEntry> finalEntriesMap = {};
+      for (var result in taskResults) {
+        finalEntriesMap.addAll(result);
       }
 
       // Convert to list and separate into two groups:
@@ -277,13 +306,12 @@ class _ParentLeaderboardScreenState extends State<ParentLeaderboardScreen> {
           if (countCompare != 0) return countCompare;
           // If same count, sort by earliest completion time (who completed first = higher rank)
           // This uses completedDate (when child completed), not approval time
-          final completionCompare =
-              a.earliestCompletion.compareTo(b.earliestCompletion);
+          final completionCompare = a.earliestCompletion.compareTo(
+            b.earliestCompletion,
+          );
           if (completionCompare != 0) return completionCompare;
           // Final deterministic fallback: alphabetical by name
-          return a.childName
-              .toLowerCase()
-              .compareTo(b.childName.toLowerCase());
+          return a.childName.toLowerCase().compareTo(b.childName.toLowerCase());
         });
       }
 
@@ -450,6 +478,7 @@ class _ParentLeaderboardScreenState extends State<ParentLeaderboardScreen> {
       // Then, get completed tasks (pending or done) for leaderboard calculations
       // pending = child completed, waiting for approval
       // done = parent approved
+      final Map<String, ParentLeaderboardEntry> entriesMap = {};
       final monthlyTaskQueries = children.map((child) async {
         final completedTasksSnapshot = await FirebaseFirestore.instance
             .collection("Parents")
@@ -466,8 +495,8 @@ class _ParentLeaderboardScreenState extends State<ParentLeaderboardScreen> {
         DateTime? earliestCompletion;
         int completedCount = 0;
 
-        if (approvedTasksSnapshot.docs.isNotEmpty) {
-          for (var taskDoc in approvedTasksSnapshot.docs) {
+        if (completedTasksSnapshot.docs.isNotEmpty) {
+          for (var taskDoc in completedTasksSnapshot.docs) {
             final taskData = taskDoc.data() as Map<String, dynamic>?;
             if (taskData != null && taskData['completedDate'] != null) {
               final completedDate = (taskData['completedDate'] as Timestamp)
@@ -493,19 +522,47 @@ class _ParentLeaderboardScreenState extends State<ParentLeaderboardScreen> {
 
         // Always add entry, even if child has 0 tasks
         // This allows showing all children when challenge exists but no one completed yet
-        entriesMap[childId] = ParentLeaderboardEntry(
-          childId: childId,
+        final childName = '${child.firstName} ${child.lastName}';
+        final childAvatar = child.avatar;
+
+        // Get wallet to calculate points based on money saved
+        final wallet = await FirebaseService.getChildWallet(_uid, child.id);
+        final totalSaved = wallet?.savingBalance ?? 0.0;
+        final totalSpent = wallet?.spendingBalance ?? 0.0;
+
+        // Calculate points based on money saved (same as child leaderboard)
+        final points = LeaderboardEntry.calculatePoints(totalSaved);
+        final currentLevel = LeaderboardEntry.calculateLevel(totalSaved);
+        final progress = LeaderboardEntry.calculateProgressToNextLevel(
+          totalSaved,
+        );
+
+        entriesMap[child.id] = ParentLeaderboardEntry(
+          childId: child.id,
           childName: childName,
           childAvatar: childAvatar,
           completedCount: completedCount,
           earliestCompletion: earliestCompletion ?? DateTime.now(),
+          totalSaved: totalSaved,
+          totalSpent: totalSpent,
+          points: points,
+          currentLevel: currentLevel,
+          progressToNextLevel: progress,
+          recentPurchases: [],
         );
+        return entriesMap;
+      }).toList();
+
+      final monthlyTaskResults = await Future.wait(monthlyTaskQueries);
+      final Map<String, ParentLeaderboardEntry> finalEntriesMap = {};
+      for (var result in monthlyTaskResults) {
+        finalEntriesMap.addAll(result);
       }
 
       // Convert to list and separate into two groups:
       // 1. Children with completed tasks (for top 3)
       // 2. All children (for the full list below)
-      final allEntries = entriesMap.values.toList();
+      final allEntries = finalEntriesMap.values.toList();
       final entriesWithTasks = allEntries
           .where((e) => e.completedCount > 0)
           .toList();
@@ -522,13 +579,12 @@ class _ParentLeaderboardScreenState extends State<ParentLeaderboardScreen> {
           if (countCompare != 0) return countCompare;
           // If same count, sort by earliest completion time (who completed first = higher rank)
           // This uses completedDate (when child completed), not approval time
-          final completionCompare =
-              a.earliestCompletion.compareTo(b.earliestCompletion);
+          final completionCompare = a.earliestCompletion.compareTo(
+            b.earliestCompletion,
+          );
           if (completionCompare != 0) return completionCompare;
           // Final deterministic fallback: alphabetical by name
-          return a.childName
-              .toLowerCase()
-              .compareTo(b.childName.toLowerCase());
+          return a.childName.toLowerCase().compareTo(b.childName.toLowerCase());
         });
       }
 
@@ -623,6 +679,19 @@ class _ParentLeaderboardScreenState extends State<ParentLeaderboardScreen> {
             fontFamily: 'SPProText',
           ),
         ),
+        actions: [
+          IconButton(
+            icon: Icon(
+              Icons.info_outline,
+              color: const Color(0xFF643FDB),
+              size: 24.sp,
+            ),
+            onPressed: () {
+              _showPointsInfoDialog(context);
+            },
+            tooltip: 'How Points Work',
+          ),
+        ],
       ),
       body: SafeArea(
         child: RefreshIndicator(
@@ -1072,7 +1141,7 @@ class _ParentLeaderboardScreenState extends State<ParentLeaderboardScreen> {
                           borderRadius: BorderRadius.circular(12.r),
                         ),
                         child: Text(
-                          '${second.points} QP',
+                          '${second.points} points',
                           style: TextStyle(
                             fontSize: 12.sp,
                             fontWeight: FontWeight.w600,
@@ -1142,7 +1211,7 @@ class _ParentLeaderboardScreenState extends State<ParentLeaderboardScreen> {
                           borderRadius: BorderRadius.circular(12.r),
                         ),
                         child: Text(
-                          '${first.points} QP',
+                          '${first.points} points',
                           style: TextStyle(
                             fontSize: 12.sp,
                             fontWeight: FontWeight.w600,
@@ -1216,7 +1285,7 @@ class _ParentLeaderboardScreenState extends State<ParentLeaderboardScreen> {
                           borderRadius: BorderRadius.circular(12.r),
                         ),
                         child: Text(
-                          '${third.points} QP',
+                          '${third.points} points',
                           style: TextStyle(
                             fontSize: 12.sp,
                             fontWeight: FontWeight.w600,
@@ -1752,6 +1821,75 @@ class _ParentLeaderboardScreenState extends State<ParentLeaderboardScreen> {
           ),
         ],
       ],
+    );
+  }
+
+  void _showPointsInfoDialog(BuildContext context) {
+    showDialog(
+      context: context,
+      builder: (BuildContext context) {
+        return AlertDialog(
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(16.r),
+          ),
+          title: Row(
+            children: [
+              Icon(Icons.stars, color: const Color(0xFFFFD700), size: 28.sp),
+              SizedBox(width: 8.w),
+              Text(
+                'How Points Work',
+                style: TextStyle(
+                  fontSize: 20.sp,
+                  fontWeight: FontWeight.bold,
+                  color: const Color(0xFF1C1243),
+                  fontFamily: 'SPProText',
+                ),
+              ),
+            ],
+          ),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                'Children earn points by saving money!',
+                style: TextStyle(
+                  fontSize: 16.sp,
+                  fontWeight: FontWeight.w600,
+                  color: const Color(0xFF1C1243),
+                  fontFamily: 'SPProText',
+                ),
+              ),
+              SizedBox(height: 12.h),
+              Text(
+                '• Every 100 SAR saved = 10 points\n\n• Points are calculated from the child\'s total savings balance\n\n• The more money saved, the more points earned\n\n• Points are displayed on the leaderboard to show each child\'s progress',
+                style: TextStyle(
+                  fontSize: 14.sp,
+                  color: const Color(0xFF6B7280),
+                  fontFamily: 'SPProText',
+                  height: 1.5,
+                ),
+              ),
+            ],
+          ),
+          actions: [
+            TextButton(
+              onPressed: () {
+                Navigator.of(context).pop();
+              },
+              child: Text(
+                'Got it!',
+                style: TextStyle(
+                  fontSize: 16.sp,
+                  fontWeight: FontWeight.w600,
+                  color: const Color(0xFF643FDB),
+                  fontFamily: 'SPProText',
+                ),
+              ),
+            ),
+          ],
+        );
+      },
     );
   }
 }

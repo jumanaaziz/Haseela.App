@@ -187,15 +187,44 @@ class _LeaderboardScreenState extends State<LeaderboardScreen> {
             .where('status', whereIn: ['pending', 'done'])
             .get();
 
+        final childName = '${child.firstName} ${child.lastName}'.trim();
+        print(
+          '🔍 [Weekly] Child $childName: Found ${completedTasksSnapshot.docs.length} challenge tasks with status pending/done',
+        );
+
         final filteredTasks = completedTasksSnapshot.docs.where((taskDoc) {
           final taskData = taskDoc.data();
+          final taskName = taskData['taskName'] as String? ?? 'Unknown';
+          final status = taskData['status'] as String? ?? 'Unknown';
+          final isChallenge = taskData['isChallenge'] as bool? ?? false;
           final completedDate = (taskData['completedDate'] as Timestamp?)
               ?.toDate();
-          return completedDate != null &&
-              completedDate.isAfter(
-                weekStart.subtract(const Duration(seconds: 1)),
-              );
+
+          print(
+            '   - Task: "$taskName", isChallenge: $isChallenge, status: $status, completedDate: $completedDate',
+          );
+
+          if (completedDate == null) {
+            print('     ❌ No completedDate - task will be excluded');
+            return false;
+          }
+
+          final isInWeek = completedDate.isAfter(
+            weekStart.subtract(const Duration(seconds: 1)),
+          );
+
+          if (!isInWeek) {
+            print(
+              '     ⚠️ completedDate $completedDate is outside week (weekStart: $weekStart)',
+            );
+          } else {
+            print('     ✅ Task is within week range');
+          }
+
+          return isInWeek;
         }).toList();
+
+        print('   ✓ Filtered to ${filteredTasks.length} tasks within week');
 
         return {'childId': child.id, 'tasks': filteredTasks};
       }).toList();
@@ -227,9 +256,22 @@ class _LeaderboardScreenState extends State<LeaderboardScreen> {
         final relevantTasks = selectedChallenge == null
             ? tasksForChild
             : tasksForChild.where((taskDoc) {
-                final taskName = taskDoc.data()['taskName'] as String? ?? '';
-                return taskName == selectedChallenge;
+                final taskName = (taskDoc.data()['taskName'] as String? ?? '')
+                    .trim();
+                final challengeMatch =
+                    taskName.toLowerCase() ==
+                    selectedChallenge!.toLowerCase().trim();
+                print(
+                  '🔍 [Weekly] Filtering task: "$taskName" vs selected: "$selectedChallenge" -> $challengeMatch',
+                );
+                return challengeMatch;
               }).toList();
+
+        if (selectedChallenge != null) {
+          print(
+            '🔍 [Weekly] Child ${child.firstName}: Found ${relevantTasks.length} tasks for challenge "$selectedChallenge"',
+          );
+        }
 
         DateTime? earliestCompletion;
         final int completedCount = relevantTasks.length;
@@ -355,7 +397,9 @@ class _LeaderboardScreenState extends State<LeaderboardScreen> {
 
           // First priority: number of completed tasks (more = higher rank)
           if (aCount != bCount) {
-            return bCount.compareTo(aCount); // Descending: more tasks = higher rank
+            return bCount.compareTo(
+              aCount,
+            ); // Descending: more tasks = higher rank
           }
 
           // Second priority (tiebreaker): earliest completion date (earlier = higher rank)
@@ -422,6 +466,9 @@ class _LeaderboardScreenState extends State<LeaderboardScreen> {
             progressToNextLevel: data['progress'] as double,
             recentPurchases: data['recentPurchases'] as List<RecentPurchase>,
             rank: i + 1,
+            challengeCompletions: data['completedCount'] as int,
+            earliestChallengeCompletion:
+                data['earliestCompletion'] as DateTime?,
           ),
         );
       }
@@ -608,16 +655,46 @@ class _LeaderboardScreenState extends State<LeaderboardScreen> {
             .where('status', whereIn: ['pending', 'done'])
             .get();
 
+        final childName = '${child.firstName} ${child.lastName}'.trim();
+        print(
+          '🔍 [Monthly] Child $childName: Found ${completedTasksSnapshot.docs.length} challenge tasks with status pending/done',
+        );
+
         final filteredTasks = completedTasksSnapshot.docs.where((taskDoc) {
           final taskData = taskDoc.data();
+          final taskName = taskData['taskName'] as String? ?? 'Unknown';
+          final status = taskData['status'] as String? ?? 'Unknown';
+          final isChallenge = taskData['isChallenge'] as bool? ?? false;
           final completedDate = (taskData['completedDate'] as Timestamp?)
               ?.toDate();
-          return completedDate != null &&
+
+          print(
+            '   - Task: "$taskName", isChallenge: $isChallenge, status: $status, completedDate: $completedDate',
+          );
+
+          if (completedDate == null) {
+            print('     ❌ No completedDate - task will be excluded');
+            return false;
+          }
+
+          final isInMonth =
               completedDate.isAfter(
                 monthStart.subtract(const Duration(seconds: 1)),
               ) &&
               completedDate.isBefore(monthEnd.add(const Duration(seconds: 1)));
+
+          if (!isInMonth) {
+            print(
+              '     ⚠️ completedDate $completedDate is outside month (monthStart: $monthStart, monthEnd: $monthEnd)',
+            );
+          } else {
+            print('     ✅ Task is within month range');
+          }
+
+          return isInMonth;
         }).toList();
+
+        print('   ✓ Filtered to ${filteredTasks.length} tasks within month');
 
         return {'childId': child.id, 'tasks': filteredTasks};
       }).toList();
@@ -649,9 +726,22 @@ class _LeaderboardScreenState extends State<LeaderboardScreen> {
         final relevantTasks = selectedMonthlyChallenge == null
             ? tasksForChild
             : tasksForChild.where((taskDoc) {
-                final taskName = taskDoc.data()['taskName'] as String? ?? '';
-                return taskName == selectedMonthlyChallenge;
+                final taskName = (taskDoc.data()['taskName'] as String? ?? '')
+                    .trim();
+                final challengeMatch =
+                    taskName.toLowerCase() ==
+                    selectedMonthlyChallenge!.toLowerCase().trim();
+                print(
+                  '🔍 [Monthly] Filtering task: "$taskName" vs selected: "$selectedMonthlyChallenge" -> $challengeMatch',
+                );
+                return challengeMatch;
               }).toList();
+
+        if (selectedMonthlyChallenge != null) {
+          print(
+            '🔍 [Monthly] Child ${child.firstName}: Found ${relevantTasks.length} tasks for challenge "$selectedMonthlyChallenge"',
+          );
+        }
 
         DateTime? earliestCompletion;
         final int completedCount = relevantTasks.length;
@@ -762,7 +852,9 @@ class _LeaderboardScreenState extends State<LeaderboardScreen> {
 
         // First priority: number of completed tasks (more = higher rank)
         if (aCount != bCount) {
-          return bCount.compareTo(aCount); // Descending: more tasks = higher rank
+          return bCount.compareTo(
+            aCount,
+          ); // Descending: more tasks = higher rank
         }
 
         // Second priority (tiebreaker): earliest completion date (earlier = higher rank)
@@ -827,6 +919,9 @@ class _LeaderboardScreenState extends State<LeaderboardScreen> {
             progressToNextLevel: data['progress'] as double,
             recentPurchases: data['recentPurchases'] as List<RecentPurchase>,
             rank: i + 1,
+            challengeCompletions: data['completedCount'] as int,
+            earliestChallengeCompletion:
+                data['earliestCompletion'] as DateTime?,
           ),
         );
       }
@@ -1080,10 +1175,8 @@ class _LeaderboardScreenState extends State<LeaderboardScreen> {
   }
 
   Widget _buildUserRankBanner(LeaderboardEntry entry) {
-    final totalPlayers = _leaderboardData.length;
-    final percentage = totalPlayers > 0
-        ? ((totalPlayers - entry.rank + 1) / totalPlayers * 100).round()
-        : 0;
+    // Generate personalized motivational message
+    String motivationalMessage = _getMotivationalMessage(entry);
 
     return Padding(
       padding: EdgeInsets.symmetric(horizontal: 20.w),
@@ -1117,7 +1210,7 @@ class _LeaderboardScreenState extends State<LeaderboardScreen> {
             SizedBox(width: 16.w),
             Expanded(
               child: Text(
-                'You are doing better than $percentage% of other players!',
+                motivationalMessage,
                 style: TextStyle(
                   fontSize: 16.sp,
                   fontWeight: FontWeight.w600,
@@ -1130,6 +1223,29 @@ class _LeaderboardScreenState extends State<LeaderboardScreen> {
         ),
       ),
     );
+  }
+
+  String _getMotivationalMessage(LeaderboardEntry entry) {
+    final totalPlayers = _leaderboardData.length;
+    final period = _isWeekly ? "this week" : "this month";
+
+    // Messages based on rank with time-based context
+    if (entry.rank == 1) {
+      return "You're leading $period! Amazing work, keep it up!";
+    } else if (entry.rank == 2) {
+      return "You're doing great $period! So close to the top, keep going!";
+    } else if (entry.rank == 3) {
+      return "You're in the top 3 $period! Great job, keep pushing forward!";
+    } else if (entry.rank <= totalPlayers * 0.3) {
+      // Top 30%
+      return "You're doing better $period! Keep saving to climb even higher!";
+    } else if (entry.rank <= totalPlayers * 0.6) {
+      // Middle 30%
+      return "You're making progress $period! Every save counts, keep going!";
+    } else {
+      // Bottom 40%
+      return "You're on the right track $period! Keep saving and you'll rise up!";
+    }
   }
 
   Widget _buildPodium(List<LeaderboardEntry> topThree) {
@@ -1197,24 +1313,28 @@ class _LeaderboardScreenState extends State<LeaderboardScreen> {
                         overflow: TextOverflow.ellipsis,
                       ),
                       SizedBox(height: 4.h),
-                      Container(
-                        padding: EdgeInsets.symmetric(
-                          horizontal: 8.w,
-                          vertical: 4.h,
-                        ),
-                        decoration: BoxDecoration(
-                          color: const Color(0xFF643FDB),
-                          borderRadius: BorderRadius.circular(12.r),
-                        ),
-                        child: Text(
-                          '${second.points} QP',
-                          style: TextStyle(
-                            fontSize: 12.sp,
-                            fontWeight: FontWeight.w600,
-                            color: Colors.white,
-                            fontFamily: 'SPProText',
+                      Column(
+                        children: [
+                          Container(
+                            padding: EdgeInsets.symmetric(
+                              horizontal: 8.w,
+                              vertical: 4.h,
+                            ),
+                            decoration: BoxDecoration(
+                              color: const Color(0xFF643FDB),
+                              borderRadius: BorderRadius.circular(12.r),
+                            ),
+                            child: Text(
+                              '${second.points} points',
+                              style: TextStyle(
+                                fontSize: 12.sp,
+                                fontWeight: FontWeight.w600,
+                                color: Colors.white,
+                                fontFamily: 'SPProText',
+                              ),
+                            ),
                           ),
-                        ),
+                        ],
                       ),
                     ],
                   ),
@@ -1268,24 +1388,28 @@ class _LeaderboardScreenState extends State<LeaderboardScreen> {
                         overflow: TextOverflow.ellipsis,
                       ),
                       SizedBox(height: 4.h),
-                      Container(
-                        padding: EdgeInsets.symmetric(
-                          horizontal: 8.w,
-                          vertical: 4.h,
-                        ),
-                        decoration: BoxDecoration(
-                          color: const Color(0xFF643FDB),
-                          borderRadius: BorderRadius.circular(12.r),
-                        ),
-                        child: Text(
-                          '${first.points} QP',
-                          style: TextStyle(
-                            fontSize: 12.sp,
-                            fontWeight: FontWeight.w600,
-                            color: Colors.white,
-                            fontFamily: 'SPProText',
+                      Column(
+                        children: [
+                          Container(
+                            padding: EdgeInsets.symmetric(
+                              horizontal: 8.w,
+                              vertical: 4.h,
+                            ),
+                            decoration: BoxDecoration(
+                              color: const Color(0xFF643FDB),
+                              borderRadius: BorderRadius.circular(12.r),
+                            ),
+                            child: Text(
+                              '${first.points} points',
+                              style: TextStyle(
+                                fontSize: 12.sp,
+                                fontWeight: FontWeight.w600,
+                                color: Colors.white,
+                                fontFamily: 'SPProText',
+                              ),
+                            ),
                           ),
-                        ),
+                        ],
                       ),
                     ],
                   ),
@@ -1343,24 +1467,28 @@ class _LeaderboardScreenState extends State<LeaderboardScreen> {
                         overflow: TextOverflow.ellipsis,
                       ),
                       SizedBox(height: 4.h),
-                      Container(
-                        padding: EdgeInsets.symmetric(
-                          horizontal: 8.w,
-                          vertical: 4.h,
-                        ),
-                        decoration: BoxDecoration(
-                          color: const Color(0xFF643FDB),
-                          borderRadius: BorderRadius.circular(12.r),
-                        ),
-                        child: Text(
-                          '${third.points} QP',
-                          style: TextStyle(
-                            fontSize: 12.sp,
-                            fontWeight: FontWeight.w600,
-                            color: Colors.white,
-                            fontFamily: 'SPProText',
+                      Column(
+                        children: [
+                          Container(
+                            padding: EdgeInsets.symmetric(
+                              horizontal: 8.w,
+                              vertical: 4.h,
+                            ),
+                            decoration: BoxDecoration(
+                              color: const Color(0xFF643FDB),
+                              borderRadius: BorderRadius.circular(12.r),
+                            ),
+                            child: Text(
+                              '${third.points} points',
+                              style: TextStyle(
+                                fontSize: 12.sp,
+                                fontWeight: FontWeight.w600,
+                                color: Colors.white,
+                                fontFamily: 'SPProText',
+                              ),
+                            ),
                           ),
-                        ),
+                        ],
                       ),
                     ],
                   ),
@@ -1640,13 +1768,29 @@ class _LeaderboardScreenState extends State<LeaderboardScreen> {
             overflow: TextOverflow.ellipsis,
           ),
         ),
-        Text(
-          '${entry.points} points',
-          style: TextStyle(
-            fontSize: 14.sp,
-            color: const Color(0xFF6B7280),
-            fontFamily: 'SPProText',
-          ),
+        Column(
+          crossAxisAlignment: CrossAxisAlignment.end,
+          children: [
+            Text(
+              '${entry.points} points',
+              style: TextStyle(
+                fontSize: 14.sp,
+                color: const Color(0xFF6B7280),
+                fontFamily: 'SPProText',
+              ),
+            ),
+            if (entry.challengeCompletions > 0) ...[
+              SizedBox(height: 2.h),
+              Text(
+                '${entry.challengeCompletions} challenge${entry.challengeCompletions == 1 ? '' : 's'}',
+                style: TextStyle(
+                  fontSize: 12.sp,
+                  color: const Color(0xFF643FDB),
+                  fontFamily: 'SPProText',
+                ),
+              ),
+            ],
+          ],
         ),
       ],
     );
