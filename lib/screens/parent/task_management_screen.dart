@@ -131,8 +131,30 @@ class _TaskManagementScreenState extends State<TaskManagementScreen> {
   }
 
   /// ✅ Delete task (by UID + selected child)
+  /// If it's a challenge task, also delete it from all children
   Future<void> _deleteTask(String taskId) async {
     if (selectedUserId.isEmpty) return;
+
+    // First, get the task to check if it's a challenge task
+    final taskDoc = await FirebaseFirestore.instance
+        .collection("Parents")
+        .doc(_uid)
+        .collection("Children")
+        .doc(selectedUserId)
+        .collection("Tasks")
+        .doc(taskId)
+        .get();
+
+    if (!taskDoc.exists) {
+      print('⚠️ Task $taskId does not exist');
+      return;
+    }
+
+    final taskData = taskDoc.data();
+    final isChallenge = taskData?['isChallenge'] as bool? ?? false;
+    final taskName = taskData?['taskName'] as String? ?? '';
+
+    // Delete the task from the selected child (current behavior)
     await FirebaseFirestore.instance
         .collection("Parents")
         .doc(_uid)
@@ -141,6 +163,55 @@ class _TaskManagementScreenState extends State<TaskManagementScreen> {
         .collection("Tasks")
         .doc(taskId)
         .delete();
+
+    // If it's a challenge task, delete it from all other children too
+    if (isChallenge && taskName.isNotEmpty) {
+      print('🔄 Deleting challenge task "$taskName" from all children');
+      
+      // Get all children
+      final childrenSnapshot = await FirebaseFirestore.instance
+          .collection("Parents")
+          .doc(_uid)
+          .collection("Children")
+          .get();
+
+      // Delete matching challenge tasks from all children
+      final deletePromises = <Future>[];
+      for (var childDoc in childrenSnapshot.docs) {
+        final childId = childDoc.id;
+        
+        // Skip the selected child since we already deleted it
+        if (childId == selectedUserId) continue;
+
+        // Find and delete all tasks with matching taskName and isChallenge=true
+        final matchingTasks = await FirebaseFirestore.instance
+            .collection("Parents")
+            .doc(_uid)
+            .collection("Children")
+            .doc(childId)
+            .collection("Tasks")
+            .where('taskName', isEqualTo: taskName)
+            .where('isChallenge', isEqualTo: true)
+            .get();
+
+        for (var taskDoc in matchingTasks.docs) {
+          deletePromises.add(
+            FirebaseFirestore.instance
+                .collection("Parents")
+                .doc(_uid)
+                .collection("Children")
+                .doc(childId)
+                .collection("Tasks")
+                .doc(taskDoc.id)
+                .delete(),
+          );
+        }
+      }
+
+      // Wait for all deletions to complete
+      await Future.wait(deletePromises);
+      print('✅ Deleted challenge task "$taskName" from ${deletePromises.length} other children');
+    }
   }
 
   /// ✅ Confirm delete dialog

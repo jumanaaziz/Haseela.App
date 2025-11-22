@@ -18,7 +18,7 @@ class ParentLeaderboardEntry {
   final String childName;
   final String? childAvatar;
   final int completedCount;
-  final DateTime earliestCompletion;
+  final DateTime? earliestCompletion;
   final double totalSaved;
   final double totalSpent;
   final int points;
@@ -31,7 +31,7 @@ class ParentLeaderboardEntry {
     required this.childName,
     this.childAvatar,
     required this.completedCount,
-    required this.earliestCompletion,
+    this.earliestCompletion,
     required this.totalSaved,
     required this.totalSpent,
     required this.points,
@@ -157,8 +157,6 @@ class _ParentLeaderboardScreenState extends State<ParentLeaderboardScreen> {
       final now = DateTime.now();
       var weekStart = now.subtract(Duration(days: now.weekday - 1));
       weekStart = DateTime(weekStart.year, weekStart.month, weekStart.day);
-      final Map<String, List<QueryDocumentSnapshot<Map<String, dynamic>>>>
-      childTasksMap = {};
       final Set<String> challengeNamesSet = {};
 
       // First, get ALL challenge tasks (completed and not completed) to populate dropdown
@@ -188,10 +186,22 @@ class _ParentLeaderboardScreenState extends State<ParentLeaderboardScreen> {
         }
       }
 
+      final availableChallenges = challengeNamesSet.toList()..sort();
+      String? selectedChallenge = _selectedChallenge;
+      if (selectedChallenge != null &&
+          !availableChallenges.contains(selectedChallenge)) {
+        selectedChallenge = null;
+        print(
+          '⚠️ Selected challenge "$_selectedChallenge" no longer available, resetting',
+        );
+      }
+
       // Then, get completed tasks (pending or done) for leaderboard calculations
       // pending = child completed, waiting for approval
       // done = parent approved
-      final Map<String, ParentLeaderboardEntry> entriesMap = {};
+      final Map<String, List<QueryDocumentSnapshot<Map<String, dynamic>>>>
+      childTasksMap = {};
+
       final taskQueries = children.map((child) async {
         final completedTasksSnapshot = await FirebaseFirestore.instance
             .collection("Parents")
@@ -203,133 +213,242 @@ class _ParentLeaderboardScreenState extends State<ParentLeaderboardScreen> {
             .where('status', whereIn: ['pending', 'done'])
             .get();
 
-        print('     - Approved tasks: ${completedTasksSnapshot.docs.length}');
+        final filteredTasks = completedTasksSnapshot.docs.where((taskDoc) {
+          final taskData = taskDoc.data();
+          final completedDate = (taskData['completedDate'] as Timestamp?)
+              ?.toDate();
 
-        // Calculate score based on when child completed the task (completedDate)
-        // NOT based on when parent approved it - ranking is by completion time
+          if (completedDate == null) return false;
+
+          final isInWeek = completedDate.isAfter(
+            weekStart.subtract(const Duration(seconds: 1)),
+          );
+
+          return isInWeek;
+        }).toList();
+
+        return {'childId': child.id, 'tasks': filteredTasks};
+      }).toList();
+
+      final taskResults = await Future.wait(taskQueries);
+      for (final result in taskResults) {
+        final childId = result['childId'] as String;
+        final tasks =
+            result['tasks']
+                as List<QueryDocumentSnapshot<Map<String, dynamic>>>;
+        childTasksMap[childId] = tasks;
+      }
+
+      final Map<String, ParentLeaderboardEntry> entriesMap = {};
+
+      // Parallelize wallet and transaction queries
+      final dataQueries = children.map((child) async {
+        final tasksForChild = childTasksMap[child.id] ?? [];
+        final relevantTasks = selectedChallenge == null
+            ? tasksForChild
+            : tasksForChild.where((taskDoc) {
+                final taskName = (taskDoc.data()['taskName'] as String? ?? '')
+                    .trim();
+                final challengeMatch =
+                    taskName.toLowerCase() ==
+                    selectedChallenge!.toLowerCase().trim();
+                return challengeMatch;
+              }).toList();
+
         DateTime? earliestCompletion;
-        int completedCount = 0;
+        final int completedCount = relevantTasks.length;
 
-        if (completedTasksSnapshot.docs.isNotEmpty) {
-          for (var taskDoc in completedTasksSnapshot.docs) {
-            final taskData = taskDoc.data() as Map<String, dynamic>?;
-
-            // Debug: print task details
-            print(
-              '     Task ${taskDoc.id}: status=${taskData?['status']}, completedDate=${taskData?['completedDate']}',
-            );
-
-            if (taskData != null && taskData['completedDate'] != null) {
-              final completedDate = (taskData['completedDate'] as Timestamp)
-                  .toDate();
-
-              // Check if within last 7 days
-              if (completedDate.isAfter(
-                weekStart.subtract(const Duration(seconds: 1)),
-              )) {
-                print('       ✓ Completed within last 7 days: $completedDate');
-                if (earliestCompletion == null ||
-                    completedDate.isBefore(earliestCompletion)) {
-                  earliestCompletion = completedDate;
-                }
-                completedCount++;
-              } else {
-                print(
-                  '       ✗ Completed outside 7-day window: $completedDate',
-                );
-              }
-            } else {
-              print('       ⚠️ No completedDate field');
-            }
+        for (final taskDoc in relevantTasks) {
+          final completedDate = (taskDoc.data()['completedDate'] as Timestamp?)
+              ?.toDate();
+          if (completedDate == null) continue;
+          if (earliestCompletion == null ||
+              completedDate.isBefore(earliestCompletion)) {
+            earliestCompletion = completedDate;
           }
         }
 
-        // Always add entry, even if child has 0 tasks
-        // This allows showing all children when challenge exists but no one completed yet
-        final childName = '${child.firstName} ${child.lastName}';
-        final childAvatar = child.avatar;
+        // Fetch wallet and transactions in parallel
+        final walletFuture = FirebaseService.getChildWallet(_uid, child.id);
+        final transactionsFuture =
+            FirebaseService.getChildTransactions(_uid, child.id).catchError((
+              e,
+            ) {
+              print('Error loading transactions for ${child.id}: $e');
+              return <app_transaction.Transaction>[];
+            });
 
-        // Get wallet to calculate points based on money saved
-        final wallet = await FirebaseService.getChildWallet(_uid, child.id);
+        final results = await Future.wait([walletFuture, transactionsFuture]);
+        final wallet = results[0] as Wallet?;
+        final transactions = results[1];
+
         final totalSaved = wallet?.savingBalance ?? 0.0;
         final totalSpent = wallet?.spendingBalance ?? 0.0;
 
-        // Calculate points based on money saved (same as child leaderboard)
         final points = LeaderboardEntry.calculatePoints(totalSaved);
         final currentLevel = LeaderboardEntry.calculateLevel(totalSaved);
         final progress = LeaderboardEntry.calculateProgressToNextLevel(
           totalSaved,
         );
 
-        print(
-          '   ✓ Adding entry: $childName with $completedCount approved completion(s), ${totalSaved.toStringAsFixed(0)} SAR saved, $points points',
-        );
-        entriesMap[child.id] = ParentLeaderboardEntry(
-          childId: child.id,
-          childName: childName,
-          childAvatar: childAvatar,
-          completedCount: completedCount,
-          earliestCompletion: earliestCompletion ?? DateTime.now(),
-          totalSaved: totalSaved,
-          totalSpent: totalSpent,
-          points: points,
-          currentLevel: currentLevel,
-          progressToNextLevel: progress,
-          recentPurchases: [],
-        );
-        return entriesMap;
+        List<RecentPurchase> recentPurchases = [];
+        try {
+          final spendingTransactions =
+              (transactions as List<app_transaction.Transaction>)
+                  .where(
+                    (t) =>
+                        t.type.toLowerCase() == 'spending' &&
+                        t.fromWallet.toLowerCase() == 'spending',
+                  )
+                  .toList()
+                ..sort((a, b) => b.date.compareTo(a.date));
+
+          recentPurchases = spendingTransactions
+              .take(3)
+              .map(
+                (t) => RecentPurchase(
+                  description: t.description,
+                  amount: t.amount,
+                  date: t.date,
+                ),
+              )
+              .toList();
+        } catch (e) {
+          print('Error processing transactions: $e');
+        }
+
+        final childName = '${child.firstName} ${child.lastName}'.trim();
+        if (childName.isEmpty) return null;
+
+        return {
+          'childId': child.id,
+          'child': child,
+          'name': childName,
+          'completedCount': completedCount,
+          'earliestCompletion': earliestCompletion,
+          'totalSaved': totalSaved,
+          'totalSpent': totalSpent,
+          'points': points,
+          'currentLevel': currentLevel,
+          'progress': progress,
+          'recentPurchases': recentPurchases,
+        };
       }).toList();
 
-      final taskResults = await Future.wait(taskQueries);
-      final Map<String, ParentLeaderboardEntry> finalEntriesMap = {};
-      for (var result in taskResults) {
-        finalEntriesMap.addAll(result);
+      final dataResults = await Future.wait(dataQueries);
+      for (final result in dataResults) {
+        if (result == null) continue;
+        final childId = result['childId'] as String;
+        final child = result['child'] as Child;
+        entriesMap[childId] = ParentLeaderboardEntry(
+          childId: childId,
+          childName: result['name'] as String,
+          childAvatar: child.avatar.isNotEmpty ? child.avatar : null,
+          completedCount: result['completedCount'] as int,
+          earliestCompletion: result['earliestCompletion'] as DateTime?,
+          totalSaved: result['totalSaved'] as double,
+          totalSpent: result['totalSpent'] as double,
+          points: result['points'] as int,
+          currentLevel: result['currentLevel'] as int,
+          progressToNextLevel: result['progress'] as double,
+          recentPurchases: result['recentPurchases'] as List<RecentPurchase>,
+        );
       }
 
-      // Convert to list and separate into two groups:
-      // 1. Children with completed tasks (for top 3)
-      // 2. All children (for the full list below)
-      final allEntries = entriesMap.values.toList();
-      final entriesWithTasks = allEntries
-          .where((e) => e.completedCount > 0)
-          .toList();
-      final entriesWithZeroTasks = allEntries
-          .where((e) => e.completedCount == 0)
-          .toList();
+      // If a challenge is selected, only include children who completed that challenge
+      final filteredEntries = selectedChallenge != null
+          ? entriesMap.entries.where((entry) {
+              final count = entry.value.completedCount;
+              return count > 0;
+            }).toList()
+          : entriesMap.entries.toList();
 
-      // Sort children with tasks by count first, then by completion time (earliest = higher rank)
-      // Ranking is based on when child completed (completedDate), NOT when parent approved
-      if (entriesWithTasks.isNotEmpty) {
-        entriesWithTasks.sort((a, b) {
-          // First sort by count (more completions = higher rank)
-          final countCompare = b.completedCount.compareTo(a.completedCount);
-          if (countCompare != 0) return countCompare;
-          // If same count, sort by earliest completion time (who completed first = higher rank)
-          // This uses completedDate (when child completed), not approval time
-          final completionCompare = a.earliestCompletion.compareTo(
-            b.earliestCompletion,
-          );
-          if (completionCompare != 0) return completionCompare;
-          // Final deterministic fallback: alphabetical by name
-          return a.childName.toLowerCase().compareTo(b.childName.toLowerCase());
+      // Check if all children have no challenge completions
+      final allHaveNoChallenges = filteredEntries.every((entry) {
+        final count = entry.value.completedCount;
+        return count == 0;
+      });
+
+      if (allHaveNoChallenges && filteredEntries.isNotEmpty) {
+        // Sort alphabetically when no challenges
+        filteredEntries.sort((a, b) {
+          final aName = a.value.childName.toLowerCase();
+          final bName = b.value.childName.toLowerCase();
+          return aName.compareTo(bName);
+        });
+      } else {
+        // Normal sorting when there are challenges
+        // Primary: number of completed tasks (more = higher rank)
+        // Tiebreaker: earliest completion time (earlier = higher rank)
+        filteredEntries.sort((a, b) {
+          final aData = a.value;
+          final bData = b.value;
+          final aCount = aData.completedCount;
+          final bCount = bData.completedCount;
+
+          // First priority: number of completed tasks (more = higher rank)
+          if (aCount != bCount) {
+            return bCount.compareTo(
+              aCount,
+            ); // Descending: more tasks = higher rank
+          }
+
+          // Second priority (tiebreaker): earliest completion date (earlier = higher rank)
+          // Only compare dates if both have completions
+          if (aCount > 0 && bCount > 0) {
+            final aDate = aData.earliestCompletion;
+            final bDate = bData.earliestCompletion;
+            if (aDate != null && bDate != null) {
+              final dateComparison = aDate.compareTo(bDate);
+              if (dateComparison != 0) {
+                return dateComparison; // Ascending: earlier date = higher rank
+              }
+            } else if (aDate != null && bDate == null) {
+              return -1; // a has date, b doesn't - a comes first
+            } else if (aDate == null && bDate != null) {
+              return 1; // b has date, a doesn't - b comes first
+            }
+          }
+
+          // Third priority: children with completions rank above those without
+          if (aCount > 0 && bCount == 0) {
+            return -1; // a has completions, b doesn't - a comes first
+          }
+          if (aCount == 0 && bCount > 0) {
+            return 1; // b has completions, a doesn't - b comes first
+          }
+
+          // Fourth priority: points
+          final aPoints = aData.points;
+          final bPoints = bData.points;
+          if (aPoints != bPoints) {
+            return bPoints.compareTo(aPoints);
+          }
+
+          // Fifth priority: level
+          final aLevel = aData.currentLevel;
+          final bLevel = bData.currentLevel;
+          if (aLevel != bLevel) {
+            return bLevel.compareTo(aLevel);
+          }
+
+          // Sixth priority: name (alphabetical)
+          final aName = aData.childName.toLowerCase();
+          final bName = bData.childName.toLowerCase();
+          return aName.compareTo(bName);
         });
       }
 
-      // Sort children with 0 tasks alphabetically
-      entriesWithZeroTasks.sort(
-        (a, b) =>
-            a.childName.toLowerCase().compareTo(b.childName.toLowerCase()),
-      );
+      final sortedEntries = filteredEntries
+          .map((entry) => entry.value)
+          .toList();
 
-      // Combine: entries with tasks first (for top 3), then entries with 0 tasks (for list)
-      final sortedEntries = [...entriesWithTasks, ...entriesWithZeroTasks];
-
-      print(
-        '✅ Weekly leaderboard loaded: ${sortedEntries.length} entries (${entriesWithTasks.length} with tasks, ${entriesWithZeroTasks.length} with 0 tasks)',
-      );
+      print('✅ Weekly leaderboard loaded: ${sortedEntries.length} entries');
 
       setState(() {
         _weeklyEntries = sortedEntries;
+        _availableChallenges = availableChallenges;
+        _selectedChallenge = selectedChallenge;
         _isLoadingWeekly = false;
       });
     } catch (e) {
@@ -442,8 +561,6 @@ class _ParentLeaderboardScreenState extends State<ParentLeaderboardScreen> {
         59,
         59,
       );
-      final Map<String, List<QueryDocumentSnapshot<Map<String, dynamic>>>>
-      childTasksMap = {};
       final Set<String> challengeNamesSet = {};
 
       // First, get ALL challenge tasks (completed and not completed) to populate dropdown
@@ -475,10 +592,22 @@ class _ParentLeaderboardScreenState extends State<ParentLeaderboardScreen> {
         }
       }
 
+      final availableMonthlyChallenges = challengeNamesSet.toList()..sort();
+      String? selectedMonthlyChallenge = _selectedMonthlyChallenge;
+      if (selectedMonthlyChallenge != null &&
+          !availableMonthlyChallenges.contains(selectedMonthlyChallenge)) {
+        selectedMonthlyChallenge = null;
+        print(
+          '⚠️ Selected monthly challenge "$_selectedMonthlyChallenge" no longer available, resetting',
+        );
+      }
+
       // Then, get completed tasks (pending or done) for leaderboard calculations
       // pending = child completed, waiting for approval
       // done = parent approved
-      final Map<String, ParentLeaderboardEntry> entriesMap = {};
+      final Map<String, List<QueryDocumentSnapshot<Map<String, dynamic>>>>
+      childTasksMap = {};
+
       final monthlyTaskQueries = children.map((child) async {
         final completedTasksSnapshot = await FirebaseFirestore.instance
             .collection("Parents")
@@ -490,119 +619,228 @@ class _ParentLeaderboardScreenState extends State<ParentLeaderboardScreen> {
             .where('status', whereIn: ['pending', 'done'])
             .get();
 
-        // Calculate score based on when child completed the task (completedDate)
-        // NOT based on when parent approved it - ranking is by completion time
+        final filteredTasks = completedTasksSnapshot.docs.where((taskDoc) {
+          final taskData = taskDoc.data();
+          final completedDate = (taskData['completedDate'] as Timestamp?)
+              ?.toDate();
+
+          if (completedDate == null) return false;
+
+          final isInMonth =
+              completedDate.isAfter(
+                monthStart.subtract(const Duration(seconds: 1)),
+              ) &&
+              completedDate.isBefore(monthEnd.add(const Duration(seconds: 1)));
+
+          return isInMonth;
+        }).toList();
+
+        return {'childId': child.id, 'tasks': filteredTasks};
+      }).toList();
+
+      final monthlyTaskResults = await Future.wait(monthlyTaskQueries);
+      for (final result in monthlyTaskResults) {
+        final childId = result['childId'] as String;
+        final tasks =
+            result['tasks']
+                as List<QueryDocumentSnapshot<Map<String, dynamic>>>;
+        childTasksMap[childId] = tasks;
+      }
+
+      final Map<String, ParentLeaderboardEntry> entriesMap = {};
+
+      // Parallelize wallet and transaction queries
+      final monthlyDataQueries = children.map((child) async {
+        final tasksForChild = childTasksMap[child.id] ?? [];
+        final relevantTasks = selectedMonthlyChallenge == null
+            ? tasksForChild
+            : tasksForChild.where((taskDoc) {
+                final taskName = (taskDoc.data()['taskName'] as String? ?? '')
+                    .trim();
+                final challengeMatch =
+                    taskName.toLowerCase() ==
+                    selectedMonthlyChallenge!.toLowerCase().trim();
+                return challengeMatch;
+              }).toList();
+
         DateTime? earliestCompletion;
-        int completedCount = 0;
+        final int completedCount = relevantTasks.length;
 
-        if (completedTasksSnapshot.docs.isNotEmpty) {
-          for (var taskDoc in completedTasksSnapshot.docs) {
-            final taskData = taskDoc.data() as Map<String, dynamic>?;
-            if (taskData != null && taskData['completedDate'] != null) {
-              final completedDate = (taskData['completedDate'] as Timestamp)
-                  .toDate();
-
-              // Check if within selected month
-              if (completedDate.isAfter(
-                    monthStart.subtract(const Duration(seconds: 1)),
-                  ) &&
-                  completedDate.isBefore(
-                    monthEnd.add(const Duration(seconds: 1)),
-                  )) {
-                print('       ✓ Completed in selected month: $completedDate');
-                if (earliestCompletion == null ||
-                    completedDate.isBefore(earliestCompletion)) {
-                  earliestCompletion = completedDate;
-                }
-                completedCount++;
-              }
-            }
+        for (final taskDoc in relevantTasks) {
+          final completedDate = (taskDoc.data()['completedDate'] as Timestamp?)
+              ?.toDate();
+          if (completedDate == null) continue;
+          if (earliestCompletion == null ||
+              completedDate.isBefore(earliestCompletion)) {
+            earliestCompletion = completedDate;
           }
         }
 
-        // Always add entry, even if child has 0 tasks
-        // This allows showing all children when challenge exists but no one completed yet
-        final childName = '${child.firstName} ${child.lastName}';
-        final childAvatar = child.avatar;
+        // Fetch wallet and transactions in parallel
+        final walletFuture = FirebaseService.getChildWallet(_uid, child.id);
+        final transactionsFuture =
+            FirebaseService.getChildTransactions(_uid, child.id).catchError((
+              e,
+            ) {
+              print('Error loading transactions for ${child.id}: $e');
+              return <app_transaction.Transaction>[];
+            });
 
-        // Get wallet to calculate points based on money saved
-        final wallet = await FirebaseService.getChildWallet(_uid, child.id);
+        final results = await Future.wait([walletFuture, transactionsFuture]);
+        final wallet = results[0] as Wallet?;
+        final transactions = results[1];
+
         final totalSaved = wallet?.savingBalance ?? 0.0;
         final totalSpent = wallet?.spendingBalance ?? 0.0;
 
-        // Calculate points based on money saved (same as child leaderboard)
         final points = LeaderboardEntry.calculatePoints(totalSaved);
         final currentLevel = LeaderboardEntry.calculateLevel(totalSaved);
         final progress = LeaderboardEntry.calculateProgressToNextLevel(
           totalSaved,
         );
 
-        entriesMap[child.id] = ParentLeaderboardEntry(
-          childId: child.id,
-          childName: childName,
-          childAvatar: childAvatar,
-          completedCount: completedCount,
-          earliestCompletion: earliestCompletion ?? DateTime.now(),
-          totalSaved: totalSaved,
-          totalSpent: totalSpent,
-          points: points,
-          currentLevel: currentLevel,
-          progressToNextLevel: progress,
-          recentPurchases: [],
-        );
-        return entriesMap;
+        List<RecentPurchase> recentPurchases = [];
+        try {
+          final spendingTransactions =
+              (transactions as List<app_transaction.Transaction>)
+                  .where(
+                    (t) =>
+                        t.type.toLowerCase() == 'spending' &&
+                        t.fromWallet.toLowerCase() == 'spending',
+                  )
+                  .toList()
+                ..sort((a, b) => b.date.compareTo(a.date));
+
+          recentPurchases = spendingTransactions
+              .take(3)
+              .map(
+                (t) => RecentPurchase(
+                  description: t.description,
+                  amount: t.amount,
+                  date: t.date,
+                ),
+              )
+              .toList();
+        } catch (e) {
+          print('Error processing transactions: $e');
+        }
+
+        final childName = '${child.firstName} ${child.lastName}'.trim();
+        if (childName.isEmpty) return null;
+
+        return {
+          'childId': child.id,
+          'child': child,
+          'name': childName,
+          'completedCount': completedCount,
+          'earliestCompletion': earliestCompletion,
+          'totalSaved': totalSaved,
+          'totalSpent': totalSpent,
+          'points': points,
+          'currentLevel': currentLevel,
+          'progress': progress,
+          'recentPurchases': recentPurchases,
+        };
       }).toList();
 
-      final monthlyTaskResults = await Future.wait(monthlyTaskQueries);
-      final Map<String, ParentLeaderboardEntry> finalEntriesMap = {};
-      for (var result in monthlyTaskResults) {
-        finalEntriesMap.addAll(result);
+      final monthlyDataResults = await Future.wait(monthlyDataQueries);
+      for (final result in monthlyDataResults) {
+        if (result == null) continue;
+        final childId = result['childId'] as String;
+        final child = result['child'] as Child;
+        entriesMap[childId] = ParentLeaderboardEntry(
+          childId: childId,
+          childName: result['name'] as String,
+          childAvatar: child.avatar.isNotEmpty ? child.avatar : null,
+          completedCount: result['completedCount'] as int,
+          earliestCompletion: result['earliestCompletion'] as DateTime?,
+          totalSaved: result['totalSaved'] as double,
+          totalSpent: result['totalSpent'] as double,
+          points: result['points'] as int,
+          currentLevel: result['currentLevel'] as int,
+          progressToNextLevel: result['progress'] as double,
+          recentPurchases: result['recentPurchases'] as List<RecentPurchase>,
+        );
       }
 
-      // Convert to list and separate into two groups:
-      // 1. Children with completed tasks (for top 3)
-      // 2. All children (for the full list below)
-      final allEntries = finalEntriesMap.values.toList();
-      final entriesWithTasks = allEntries
-          .where((e) => e.completedCount > 0)
+      // If a challenge is selected, only include children who completed that challenge
+      final filteredEntries = selectedMonthlyChallenge != null
+          ? entriesMap.entries.where((entry) {
+              final count = entry.value.completedCount;
+              return count > 0;
+            }).toList()
+          : entriesMap.entries.toList();
+
+      // Primary: number of completed tasks (more = higher rank)
+      // Tiebreaker: earliest completion time (earlier = higher rank)
+      filteredEntries.sort((a, b) {
+        final aData = a.value;
+        final bData = b.value;
+        final aCount = aData.completedCount;
+        final bCount = bData.completedCount;
+
+        // First priority: number of completed tasks (more = higher rank)
+        if (aCount != bCount) {
+          return bCount.compareTo(
+            aCount,
+          ); // Descending: more tasks = higher rank
+        }
+
+        // Second priority (tiebreaker): earliest completion date (earlier = higher rank)
+        // Only compare dates if both have completions
+        if (aCount > 0 && bCount > 0) {
+          final aDate = aData.earliestCompletion;
+          final bDate = bData.earliestCompletion;
+          if (aDate != null && bDate != null) {
+            final dateComparison = aDate.compareTo(bDate);
+            if (dateComparison != 0) {
+              return dateComparison; // Ascending: earlier date = higher rank
+            }
+          } else if (aDate != null && bDate == null) {
+            return -1; // a has date, b doesn't - a comes first
+          } else if (aDate == null && bDate != null) {
+            return 1; // b has date, a doesn't - b comes first
+          }
+        }
+
+        // Third priority: children with completions rank above those without
+        if (aCount > 0 && bCount == 0) {
+          return -1; // a has completions, b doesn't - a comes first
+        }
+        if (aCount == 0 && bCount > 0) {
+          return 1; // b has completions, a doesn't - b comes first
+        }
+
+        // Fourth priority: points
+        final aPoints = aData.points;
+        final bPoints = bData.points;
+        if (aPoints != bPoints) {
+          return bPoints.compareTo(aPoints);
+        }
+
+        // Fifth priority: level
+        final aLevel = aData.currentLevel;
+        final bLevel = bData.currentLevel;
+        if (aLevel != bLevel) {
+          return bLevel.compareTo(aLevel);
+        }
+
+        // Sixth priority: name (alphabetical)
+        final aName = aData.childName.toLowerCase();
+        final bName = bData.childName.toLowerCase();
+        return aName.compareTo(bName);
+      });
+
+      final sortedEntries = filteredEntries
+          .map((entry) => entry.value)
           .toList();
-      final entriesWithZeroTasks = allEntries
-          .where((e) => e.completedCount == 0)
-          .toList();
 
-      // Sort children with tasks by count first, then by completion time (earliest = higher rank)
-      // Ranking is based on when child completed (completedDate), NOT when parent approved
-      if (entriesWithTasks.isNotEmpty) {
-        entriesWithTasks.sort((a, b) {
-          // First sort by count (more completions = higher rank)
-          final countCompare = b.completedCount.compareTo(a.completedCount);
-          if (countCompare != 0) return countCompare;
-          // If same count, sort by earliest completion time (who completed first = higher rank)
-          // This uses completedDate (when child completed), not approval time
-          final completionCompare = a.earliestCompletion.compareTo(
-            b.earliestCompletion,
-          );
-          if (completionCompare != 0) return completionCompare;
-          // Final deterministic fallback: alphabetical by name
-          return a.childName.toLowerCase().compareTo(b.childName.toLowerCase());
-        });
-      }
-
-      // Sort children with 0 tasks alphabetically
-      entriesWithZeroTasks.sort(
-        (a, b) =>
-            a.childName.toLowerCase().compareTo(b.childName.toLowerCase()),
-      );
-
-      // Combine: entries with tasks first (for top 3), then entries with 0 tasks (for list)
-      final sortedEntries = [...entriesWithTasks, ...entriesWithZeroTasks];
-
-      print(
-        '✅ Monthly leaderboard loaded: ${sortedEntries.length} entries (${entriesWithTasks.length} with tasks, ${entriesWithZeroTasks.length} with 0 tasks)',
-      );
+      print('✅ Monthly leaderboard loaded: ${sortedEntries.length} entries');
 
       setState(() {
         _monthlyEntries = sortedEntries;
+        _availableMonthlyChallenges = availableMonthlyChallenges;
+        _selectedMonthlyChallenge = selectedMonthlyChallenge;
         _isLoadingMonthly = false;
       });
     } catch (e) {
@@ -706,7 +944,7 @@ class _ParentLeaderboardScreenState extends State<ParentLeaderboardScreen> {
 
   Widget _buildLeaderboardContent() {
     return SingleChildScrollView(
-      physics: const ClampingScrollPhysics(),
+      physics: const AlwaysScrollableScrollPhysics(),
       child: Column(
         children: [
           SizedBox(height: 16.h),
@@ -1561,13 +1799,29 @@ class _ParentLeaderboardScreenState extends State<ParentLeaderboardScreen> {
             overflow: TextOverflow.ellipsis,
           ),
         ),
-        Text(
-          '${entry.points} points',
-          style: TextStyle(
-            fontSize: 14.sp,
-            color: const Color(0xFF6B7280),
-            fontFamily: 'SPProText',
-          ),
+        Column(
+          crossAxisAlignment: CrossAxisAlignment.end,
+          children: [
+            Text(
+              '${entry.points} points',
+              style: TextStyle(
+                fontSize: 14.sp,
+                color: const Color(0xFF6B7280),
+                fontFamily: 'SPProText',
+              ),
+            ),
+            if (entry.completedCount > 0) ...[
+              SizedBox(height: 2.h),
+              Text(
+                '${entry.completedCount} challenge${entry.completedCount == 1 ? '' : 's'}',
+                style: TextStyle(
+                  fontSize: 12.sp,
+                  color: const Color(0xFF643FDB),
+                  fontFamily: 'SPProText',
+                ),
+              ),
+            ],
+          ],
         ),
       ],
     );
