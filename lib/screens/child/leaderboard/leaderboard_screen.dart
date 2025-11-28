@@ -138,15 +138,24 @@ class _LeaderboardScreenState extends State<LeaderboardScreen> {
         return;
       }
 
-      // Calculate challenge completions for the week (matching parent leaderboard logic)
+      // Calculate challenge completions for the week (last 7 days from today)
       final now = DateTime.now();
-      var weekStart = now.subtract(Duration(days: now.weekday - 1));
-      weekStart = DateTime(weekStart.year, weekStart.month, weekStart.day);
+      final weekStart = DateTime(
+        now.year,
+        now.month,
+        now.day,
+      ).subtract(const Duration(days: 6));
+      final weekEnd = DateTime(
+        now.year,
+        now.month,
+        now.day,
+      ).add(const Duration(days: 1));
       final Map<String, List<QueryDocumentSnapshot<Map<String, dynamic>>>>
       childTasksMap = {};
       final Set<String> challengeNamesSet = {};
 
       // First, get ALL challenge tasks (completed and not completed) to populate dropdown
+      // For weekly view, only show challenges created in the current week
       final allChallengeQueries = children.map((child) async {
         final allTasksSnapshot = await FirebaseFirestore.instance
             .collection("Parents")
@@ -168,7 +177,19 @@ class _LeaderboardScreenState extends State<LeaderboardScreen> {
         for (final taskDoc in allTasks) {
           final taskName = taskDoc.data()['taskName'] as String? ?? '';
           if (taskName.isNotEmpty) {
-            challengeNamesSet.add(taskName);
+            // Only include challenges created in the current week
+            final createdAt =
+                (taskDoc.data()['createdAt'] as Timestamp?)?.toDate() ??
+                DateTime.now();
+            final isCreatedThisWeek =
+                createdAt.isAfter(
+                  weekStart.subtract(const Duration(seconds: 1)),
+                ) &&
+                createdAt.isBefore(weekEnd);
+
+            if (isCreatedThisWeek) {
+              challengeNamesSet.add(taskName);
+            }
           }
         }
       }
@@ -209,9 +230,11 @@ class _LeaderboardScreenState extends State<LeaderboardScreen> {
             return false;
           }
 
-          final isInWeek = completedDate.isAfter(
-            weekStart.subtract(const Duration(seconds: 1)),
-          );
+          final isInWeek =
+              completedDate.isAfter(
+                weekStart.subtract(const Duration(seconds: 1)),
+              ) &&
+              completedDate.isBefore(weekEnd);
 
           if (!isInWeek) {
             print(
@@ -248,11 +271,67 @@ class _LeaderboardScreenState extends State<LeaderboardScreen> {
         );
       }
 
+      // If no challenge is selected, default to the last (most recent) challenge created this week
+      if (selectedChallenge == null && availableChallenges.isNotEmpty) {
+        // Get challenges sorted by creation date (most recent first)
+        final Map<String, DateTime> challengeDates = {};
+        for (final result in allChallengeResults) {
+          final allTasks =
+              result['allTasks']
+                  as List<QueryDocumentSnapshot<Map<String, dynamic>>>;
+          for (final taskDoc in allTasks) {
+            final taskName = taskDoc.data()['taskName'] as String? ?? '';
+            if (taskName.isNotEmpty && availableChallenges.contains(taskName)) {
+              final createdAt =
+                  (taskDoc.data()['createdAt'] as Timestamp?)?.toDate() ??
+                  DateTime.now();
+              // Only consider challenges created this week
+              final isCreatedThisWeek =
+                  createdAt.isAfter(
+                    weekStart.subtract(const Duration(seconds: 1)),
+                  ) &&
+                  createdAt.isBefore(weekEnd);
+
+              if (isCreatedThisWeek) {
+                if (!challengeDates.containsKey(taskName) ||
+                    createdAt.isAfter(challengeDates[taskName]!)) {
+                  challengeDates[taskName] = createdAt;
+                }
+              }
+            }
+          }
+        }
+
+        // Sort by creation date and get the most recent
+        final sortedChallenges = challengeDates.entries.toList()
+          ..sort((a, b) => b.value.compareTo(a.value));
+
+        if (sortedChallenges.isNotEmpty) {
+          selectedChallenge = sortedChallenges.first.key;
+          print(
+            '📊 [Weekly] No challenge selected - defaulting to last challenge: "$selectedChallenge"',
+          );
+        }
+      }
+
       final Map<String, Map<String, dynamic>> childDataMap = {};
 
       // Parallelize wallet and transaction queries
       final dataQueries = children.map((child) async {
         final tasksForChild = childTasksMap[child.id] ?? [];
+
+        // Debug: Log all tasks for this child when no challenge is selected
+        if (selectedChallenge == null) {
+          print(
+            '📊 [Weekly] No challenge selected - using ALL ${tasksForChild.length} tasks for child ${child.firstName}',
+          );
+          final challengeNamesInTasks = tasksForChild
+              .map((task) => (task.data()['taskName'] as String? ?? '').trim())
+              .where((name) => name.isNotEmpty)
+              .toSet();
+          print('📊 [Weekly] Challenges in tasks: $challengeNamesInTasks');
+        }
+
         final relevantTasks = selectedChallenge == null
             ? tasksForChild
             : tasksForChild.where((taskDoc) {
@@ -269,7 +348,7 @@ class _LeaderboardScreenState extends State<LeaderboardScreen> {
 
         if (selectedChallenge != null) {
           print(
-            '🔍 [Weekly] Child ${child.firstName}: Found ${relevantTasks.length} tasks for challenge "$selectedChallenge"',
+            '🔍 [Weekly] Child ${child.firstName}: Found ${relevantTasks.length} tasks for challenge "$selectedChallenge" (this week only)',
           );
         }
 
@@ -372,81 +451,65 @@ class _LeaderboardScreenState extends State<LeaderboardScreen> {
             }).toList()
           : childDataMap.entries.toList();
 
-      // Check if all children have no challenge completions
-      final allHaveNoChallenges = filteredEntries.every((entry) {
-        final count = entry.value['completedCount'] as int;
-        return count == 0;
-      });
+      // Primary: number of completed tasks (more = higher rank)
+      // Tiebreaker: earliest completion time (earlier = higher rank)
+      filteredEntries.sort((a, b) {
+        final aData = a.value;
+        final bData = b.value;
+        final aCount = aData['completedCount'] as int;
+        final bCount = bData['completedCount'] as int;
 
-      if (allHaveNoChallenges && filteredEntries.isNotEmpty) {
-        // Sort alphabetically when no challenges
-        filteredEntries.sort((a, b) {
-          final aName = (a.value['name'] as String).toLowerCase();
-          final bName = (b.value['name'] as String).toLowerCase();
-          return aName.compareTo(bName);
-        });
-      } else {
-        // Normal sorting when there are challenges
-        // Primary: number of completed tasks (more = higher rank)
-        // Tiebreaker: earliest completion time (earlier = higher rank)
-        filteredEntries.sort((a, b) {
-          final aData = a.value;
-          final bData = b.value;
-          final aCount = aData['completedCount'] as int;
-          final bCount = bData['completedCount'] as int;
+        // First priority: number of completed tasks (more = higher rank)
+        if (aCount != bCount) {
+          return bCount.compareTo(
+            aCount,
+          ); // Descending: more tasks = higher rank
+        }
 
-          // First priority: number of completed tasks (more = higher rank)
-          if (aCount != bCount) {
-            return bCount.compareTo(
-              aCount,
-            ); // Descending: more tasks = higher rank
-          }
-
-          // Second priority (tiebreaker): earliest completion date (earlier = higher rank)
-          // Only compare dates if both have completions
-          if (aCount > 0 && bCount > 0) {
-            final aDate = aData['earliestCompletion'] as DateTime?;
-            final bDate = bData['earliestCompletion'] as DateTime?;
-            if (aDate != null && bDate != null) {
-              final dateComparison = aDate.compareTo(bDate);
-              if (dateComparison != 0) {
-                return dateComparison; // Ascending: earlier date = higher rank
-              }
-            } else if (aDate != null && bDate == null) {
-              return -1; // a has date, b doesn't - a comes first
-            } else if (aDate == null && bDate != null) {
-              return 1; // b has date, a doesn't - b comes first
+        // Second priority (tiebreaker): earliest completion date (earlier = higher rank)
+        // Only compare dates if both have completions
+        if (aCount > 0 && bCount > 0) {
+          final aDate = aData['earliestCompletion'] as DateTime?;
+          final bDate = bData['earliestCompletion'] as DateTime?;
+          if (aDate != null && bDate != null) {
+            final dateComparison = aDate.compareTo(bDate);
+            if (dateComparison != 0) {
+              return dateComparison; // Ascending: earlier date = higher rank
             }
+          } else if (aDate != null && bDate == null) {
+            return -1; // a has date, b doesn't - a comes first
+          } else if (aDate == null && bDate != null) {
+            return 1; // b has date, a doesn't - b comes first
           }
+        }
 
-          // Third priority: children with completions rank above those without
-          if (aCount > 0 && bCount == 0) {
-            return -1; // a has completions, b doesn't - a comes first
-          }
-          if (aCount == 0 && bCount > 0) {
-            return 1; // b has completions, a doesn't - b comes first
-          }
+        // Third priority: children with completions rank above those without
+        if (aCount > 0 && bCount == 0) {
+          return -1; // a has completions, b doesn't - a comes first
+        }
+        if (aCount == 0 && bCount > 0) {
+          return 1; // b has completions, a doesn't - b comes first
+        }
 
-          // Fourth priority: points
-          final aPoints = aData['points'] as int;
-          final bPoints = bData['points'] as int;
-          if (aPoints != bPoints) {
-            return bPoints.compareTo(aPoints);
-          }
+        // Fourth priority: points
+        final aPoints = aData['points'] as int;
+        final bPoints = bData['points'] as int;
+        if (aPoints != bPoints) {
+          return bPoints.compareTo(aPoints);
+        }
 
-          // Fifth priority: level
-          final aLevel = aData['currentLevel'] as int;
-          final bLevel = bData['currentLevel'] as int;
-          if (aLevel != bLevel) {
-            return bLevel.compareTo(aLevel);
-          }
+        // Fifth priority: level
+        final aLevel = aData['currentLevel'] as int;
+        final bLevel = bData['currentLevel'] as int;
+        if (aLevel != bLevel) {
+          return bLevel.compareTo(aLevel);
+        }
 
-          // Sixth priority: name (alphabetical)
-          final aName = (aData['name'] as String).toLowerCase();
-          final bName = (bData['name'] as String).toLowerCase();
-          return aName.compareTo(bName);
-        });
-      }
+        // Sixth priority: name (alphabetical)
+        final aName = (aData['name'] as String).toLowerCase();
+        final bName = (bData['name'] as String).toLowerCase();
+        return aName.compareTo(bName);
+      });
 
       final List<LeaderboardEntry> entries = [];
       // Start ranking from 1 (even when no challenges)
@@ -494,9 +557,13 @@ class _LeaderboardScreenState extends State<LeaderboardScreen> {
         setState(() {
           _weeklyLeaderboardData = entries;
           _availableChallenges = availableChallenges;
-          _selectedChallenge = selectedChallenge;
+          // Explicitly set to null if no challenge is selected
+          _selectedChallenge = selectedChallenge ?? null;
           _isLoadingWeekly = false;
         });
+        print(
+          '📊 [Weekly] Final state - _selectedChallenge: $_selectedChallenge, entries count: ${entries.length}',
+        );
       }
     } catch (e) {
       print('❌ Error loading weekly leaderboard data: $e');
@@ -716,6 +783,51 @@ class _LeaderboardScreenState extends State<LeaderboardScreen> {
         print(
           '⚠️ Selected monthly challenge "$_selectedMonthlyChallenge" no longer available, resetting',
         );
+      }
+
+      // If no challenge is selected, default to the last (most recent) challenge created in the selected month
+      if (selectedMonthlyChallenge == null &&
+          availableMonthlyChallenges.isNotEmpty) {
+        // Get challenges sorted by creation date (most recent first)
+        final Map<String, DateTime> challengeDates = {};
+        for (final result in allMonthlyChallengeResults) {
+          final allTasks =
+              result['allTasks']
+                  as List<QueryDocumentSnapshot<Map<String, dynamic>>>;
+          for (final taskDoc in allTasks) {
+            final taskName = taskDoc.data()['taskName'] as String? ?? '';
+            if (taskName.isNotEmpty &&
+                availableMonthlyChallenges.contains(taskName)) {
+              final createdAt =
+                  (taskDoc.data()['createdAt'] as Timestamp?)?.toDate() ??
+                  DateTime.now();
+              // Only consider challenges created in the selected month
+              final isCreatedInMonth =
+                  createdAt.isAfter(
+                    monthStart.subtract(const Duration(seconds: 1)),
+                  ) &&
+                  createdAt.isBefore(monthEnd.add(const Duration(seconds: 1)));
+
+              if (isCreatedInMonth) {
+                if (!challengeDates.containsKey(taskName) ||
+                    createdAt.isAfter(challengeDates[taskName]!)) {
+                  challengeDates[taskName] = createdAt;
+                }
+              }
+            }
+          }
+        }
+
+        // Sort by creation date and get the most recent
+        final sortedChallenges = challengeDates.entries.toList()
+          ..sort((a, b) => b.value.compareTo(a.value));
+
+        if (sortedChallenges.isNotEmpty) {
+          selectedMonthlyChallenge = sortedChallenges.first.key;
+          print(
+            '📊 [Monthly] No challenge selected - defaulting to last challenge: "$selectedMonthlyChallenge"',
+          );
+        }
       }
 
       final Map<String, Map<String, dynamic>> childDataMap = {};
