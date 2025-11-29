@@ -191,6 +191,8 @@ class _ParentLeaderboardScreenState extends State<ParentLeaderboardScreen> {
       // Then, get completed tasks (pending or done) for leaderboard calculations
       // pending = child completed, waiting for approval
       // done = parent approved
+      final Map<String, ParentLeaderboardEntry> entriesMap = {};
+      
       final taskQueries = children.map((child) async {
         final completedTasksSnapshot = await FirebaseFirestore.instance
             .collection("Parents")
@@ -202,15 +204,15 @@ class _ParentLeaderboardScreenState extends State<ParentLeaderboardScreen> {
             .where('status', whereIn: ['pending', 'done'])
             .get();
 
-        print('     - Approved tasks: ${approvedTasksSnapshot.docs.length}');
+        print('     - Completed tasks: ${completedTasksSnapshot.docs.length}');
 
         // Calculate score based on when child completed the task (completedDate)
         // NOT based on when parent approved it - ranking is by completion time
         DateTime? earliestCompletion;
         int completedCount = 0;
 
-        if (approvedTasksSnapshot.docs.isNotEmpty) {
-          for (var taskDoc in approvedTasksSnapshot.docs) {
+        if (completedTasksSnapshot.docs.isNotEmpty) {
+          for (var taskDoc in completedTasksSnapshot.docs) {
             final taskData = taskDoc.data() as Map<String, dynamic>?;
 
             // Debug: print task details
@@ -246,16 +248,24 @@ class _ParentLeaderboardScreenState extends State<ParentLeaderboardScreen> {
         // Always add entry, even if child has 0 tasks
         // This allows showing all children when challenge exists but no one completed yet
         print(
-          '   ✓ Adding entry: $childName with $completedCount approved completion(s)',
+          '   ✓ Adding entry: ${child.fullName} with $completedCount approved completion(s)',
         );
-        entriesMap[childId] = ParentLeaderboardEntry(
-          childId: childId,
-          childName: childName,
-          childAvatar: childAvatar,
+        entriesMap[child.id] = ParentLeaderboardEntry(
+          childId: child.id,
+          childName: child.fullName,
+          childAvatar: child.avatar,
           completedCount: completedCount,
           earliestCompletion: earliestCompletion ?? DateTime.now(),
+          totalSaved: 0.0,
+          totalSpent: 0.0,
+          points: 0,
+          currentLevel: 1,
+          progressToNextLevel: 0.0,
+          recentPurchases: [],
         );
-      }
+      }).toList();
+
+      await Future.wait(taskQueries);
 
       // Convert to list and separate into two groups:
       // 1. Children with completed tasks (for top 3)
@@ -450,6 +460,8 @@ class _ParentLeaderboardScreenState extends State<ParentLeaderboardScreen> {
       // Then, get completed tasks (pending or done) for leaderboard calculations
       // pending = child completed, waiting for approval
       // done = parent approved
+      final Map<String, ParentLeaderboardEntry> entriesMap = {};
+      
       final monthlyTaskQueries = children.map((child) async {
         final completedTasksSnapshot = await FirebaseFirestore.instance
             .collection("Parents")
@@ -466,8 +478,8 @@ class _ParentLeaderboardScreenState extends State<ParentLeaderboardScreen> {
         DateTime? earliestCompletion;
         int completedCount = 0;
 
-        if (approvedTasksSnapshot.docs.isNotEmpty) {
-          for (var taskDoc in approvedTasksSnapshot.docs) {
+        if (completedTasksSnapshot.docs.isNotEmpty) {
+          for (var taskDoc in completedTasksSnapshot.docs) {
             final taskData = taskDoc.data() as Map<String, dynamic>?;
             if (taskData != null && taskData['completedDate'] != null) {
               final completedDate = (taskData['completedDate'] as Timestamp)
@@ -493,14 +505,22 @@ class _ParentLeaderboardScreenState extends State<ParentLeaderboardScreen> {
 
         // Always add entry, even if child has 0 tasks
         // This allows showing all children when challenge exists but no one completed yet
-        entriesMap[childId] = ParentLeaderboardEntry(
-          childId: childId,
-          childName: childName,
-          childAvatar: childAvatar,
+        entriesMap[child.id] = ParentLeaderboardEntry(
+          childId: child.id,
+          childName: child.fullName,
+          childAvatar: child.avatar,
           completedCount: completedCount,
           earliestCompletion: earliestCompletion ?? DateTime.now(),
+          totalSaved: 0.0,
+          totalSpent: 0.0,
+          points: 0,
+          currentLevel: 1,
+          progressToNextLevel: 0.0,
+          recentPurchases: [],
         );
-      }
+      }).toList();
+
+      await Future.wait(monthlyTaskQueries);
 
       // Convert to list and separate into two groups:
       // 1. Children with completed tasks (for top 3)

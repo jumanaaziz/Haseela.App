@@ -1053,45 +1053,23 @@ class _ChildTaskViewScreenState extends State<ChildTaskViewScreen> {
           ],
 
           // Task completion buttons
-          Row(
-            children: [
-              // Upload photo button
-              Expanded(
-                child: ElevatedButton.icon(
-                  onPressed: _uploadingImages[task.id] == true
-                      ? null
-                      : () {
-                          _pickImageFromGallery(task);
-                        },
-                  icon: _uploadingImages[task.id] == true
-                      ? SizedBox(
-                          width: MediaQuery.of(context).size.width * 0.045,
-                          height: MediaQuery.of(context).size.width * 0.045,
-                          child: CircularProgressIndicator(
-                            strokeWidth: 2,
-                            valueColor: AlwaysStoppedAnimation<Color>(
-                              Colors.white,
-                            ),
-                          ),
-                        )
-                      : Icon(
-                          Icons.photo_library,
-                          size: MediaQuery.of(context).size.width * 0.045,
-                        ),
+          _isTaskOverdue(task)
+              ? // Single button for overdue tasks
+              ElevatedButton.icon(
+                  onPressed: null,
+                  icon: Icon(
+                    Icons.error_outline,
+                    size: MediaQuery.of(context).size.width * 0.045,
+                  ),
                   label: Text(
-                    _uploadingImages[task.id] == true
-                        ? 'Uploading...'
-                        : 'Upload Photo',
+                    'Task Overdue',
                     style: TextStyle(
                       fontSize: MediaQuery.of(context).size.width * 0.04,
                       fontWeight: FontWeight.w600,
                     ),
-                    textAlign: TextAlign.center,
                   ),
                   style: ElevatedButton.styleFrom(
-                    backgroundColor: _uploadingImages[task.id] == true
-                        ? Color(0xFF643FDB).withOpacity(0.5)
-                        : Color(0xFF643FDB).withOpacity(0.7),
+                    backgroundColor: Colors.grey.withOpacity(0.5),
                     foregroundColor: Colors.white,
                     padding: EdgeInsets.symmetric(
                       vertical: MediaQuery.of(context).size.height * 0.02,
@@ -1102,50 +1080,103 @@ class _ChildTaskViewScreenState extends State<ChildTaskViewScreen> {
                       ),
                     ),
                     elevation: 0,
+                    minimumSize: Size(double.infinity, 0),
                   ),
-                ),
-              ),
-
-              SizedBox(width: 12),
-
-              // Complete task button
-              Expanded(
-                child: ElevatedButton.icon(
-                  onPressed: _uploadingImages[task.id] == true
-                      ? null
-                      : () {
-                          _completeTaskWithoutPhoto(task);
-                        },
-                  icon: Icon(
-                    Icons.check_circle_outline,
-                    size: MediaQuery.of(context).size.width * 0.045,
-                  ),
-                  label: Text(
-                    'Complete Task',
-                    style: TextStyle(
-                      fontSize: MediaQuery.of(context).size.width * 0.038,
-                      fontWeight: FontWeight.w600,
-                    ),
-                  ),
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: _uploadingImages[task.id] == true
-                        ? Color(0xFF47C272).withOpacity(0.5)
-                        : Color(0xFF47C272),
-                    foregroundColor: Colors.white,
-                    padding: EdgeInsets.symmetric(
-                      vertical: MediaQuery.of(context).size.height * 0.02,
-                    ),
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(
-                        MediaQuery.of(context).size.width * 0.03,
+                )
+              : // Two buttons for non-overdue tasks
+              Row(
+                  children: [
+                    // Upload photo button
+                    Expanded(
+                      child: ElevatedButton.icon(
+                        onPressed: _uploadingImages[task.id] == true
+                            ? null
+                            : () {
+                                _pickImageFromGallery(task);
+                              },
+                        icon: _uploadingImages[task.id] == true
+                            ? SizedBox(
+                                width: MediaQuery.of(context).size.width * 0.045,
+                                height: MediaQuery.of(context).size.width * 0.045,
+                                child: CircularProgressIndicator(
+                                  strokeWidth: 2,
+                                  valueColor: AlwaysStoppedAnimation<Color>(
+                                    Colors.white,
+                                  ),
+                                ),
+                              )
+                            : Icon(
+                                Icons.photo_library,
+                                size: MediaQuery.of(context).size.width * 0.045,
+                              ),
+                        label: Text(
+                          _uploadingImages[task.id] == true
+                              ? 'Uploading...'
+                              : 'Upload Photo',
+                          style: TextStyle(
+                            fontSize: MediaQuery.of(context).size.width * 0.04,
+                            fontWeight: FontWeight.w600,
+                          ),
+                          textAlign: TextAlign.center,
+                        ),
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: _uploadingImages[task.id] == true
+                              ? Color(0xFF643FDB).withOpacity(0.5)
+                              : Color(0xFF643FDB).withOpacity(0.7),
+                          foregroundColor: Colors.white,
+                          padding: EdgeInsets.symmetric(
+                            vertical: MediaQuery.of(context).size.height * 0.02,
+                          ),
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(
+                              MediaQuery.of(context).size.width * 0.03,
+                            ),
+                          ),
+                          elevation: 0,
+                        ),
                       ),
                     ),
-                    elevation: 0,
-                  ),
+
+                    SizedBox(width: 12),
+
+                    // Complete task button
+                    Expanded(
+                      child: ElevatedButton.icon(
+                        onPressed: _uploadingImages[task.id] == true
+                            ? null
+                            : () {
+                                _completeTaskWithoutPhoto(task);
+                              },
+                        icon: Icon(
+                          Icons.check_circle_outline,
+                          size: MediaQuery.of(context).size.width * 0.045,
+                        ),
+                        label: Text(
+                          'Complete Task',
+                          style: TextStyle(
+                            fontSize: MediaQuery.of(context).size.width * 0.038,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: _uploadingImages[task.id] == true
+                              ? Color(0xFF47C272).withOpacity(0.5)
+                              : Color(0xFF47C272),
+                          foregroundColor: Colors.white,
+                          padding: EdgeInsets.symmetric(
+                            vertical: MediaQuery.of(context).size.height * 0.02,
+                          ),
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(
+                              MediaQuery.of(context).size.width * 0.03,
+                            ),
+                          ),
+                          elevation: 0,
+                        ),
+                      ),
+                    ),
+                  ],
                 ),
-              ),
-            ],
-          ),
         ],
       ),
     );
@@ -1894,6 +1925,95 @@ class _ChildTaskViewScreenState extends State<ChildTaskViewScreen> {
   }
 
   Future<void> _uploadImageAndCompleteTask(Task task, XFile imageFile) async {
+    // Check if task is overdue
+    if (_isTaskOverdue(task)) {
+      final daysOverdue = DateTime.now().difference(task.dueDate!).inDays;
+      final overdueText = daysOverdue == 0 
+          ? 'today' 
+          : daysOverdue == 1 
+              ? '1 day ago' 
+              : '$daysOverdue days ago';
+      
+      showDialog(
+        context: context,
+        builder: (BuildContext context) {
+          return AlertDialog(
+            title: Row(
+              children: [
+                Icon(Icons.error_outline, color: Colors.red),
+                SizedBox(width: 8),
+                Text('Task Overdue'),
+              ],
+            ),
+            content: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  'This task is overdue and cannot be completed.',
+                  style: TextStyle(fontSize: 16),
+                ),
+                SizedBox(height: 12),
+                Container(
+                  padding: EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    color: Colors.red[50],
+                    borderRadius: BorderRadius.circular(8),
+                    border: Border.all(color: Colors.red[200]!),
+                  ),
+                  child: Row(
+                    children: [
+                      Icon(
+                        Icons.info_outline,
+                        color: Colors.red[700],
+                        size: 20,
+                      ),
+                      SizedBox(width: 8),
+                      Expanded(
+                        child: Text(
+                          'Task: ${task.taskName}\nDue: $overdueText',
+                          style: TextStyle(
+                            color: Colors.red[700],
+                            fontSize: 13,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                SizedBox(height: 8),
+                Text(
+                  'Please contact your parent to update the due date or mark the task as complete.',
+                  style: TextStyle(
+                    fontSize: 13,
+                    color: Colors.grey[600],
+                  ),
+                ),
+              ],
+            ),
+            actions: [
+              ElevatedButton(
+                onPressed: () {
+                  Navigator.of(context).pop();
+                },
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: Colors.red,
+                  foregroundColor: Colors.white,
+                ),
+                child: Text('OK'),
+              ),
+            ],
+          );
+        },
+      );
+      
+      // Remove the selected image since we can't complete
+      setState(() {
+        _selectedImages.remove(task.id);
+      });
+      return; // Exit early, don't allow completion
+    }
+    
     setState(() {
       _uploadingImages[task.id] = true;
     });
@@ -1975,7 +2095,101 @@ class _ChildTaskViewScreenState extends State<ChildTaskViewScreen> {
     }
   }
 
+  /// Check if a task is overdue
+  bool _isTaskOverdue(Task task) {
+    if (task.dueDate == null) return false;
+    final now = DateTime.now();
+    // Remove time component for date comparison
+    final dueDate = DateTime(task.dueDate!.year, task.dueDate!.month, task.dueDate!.day);
+    final today = DateTime(now.year, now.month, now.day);
+    return dueDate.isBefore(today);
+  }
+
   Future<void> _completeTaskWithoutPhoto(Task task) async {
+    // Check if task is overdue
+    if (_isTaskOverdue(task)) {
+      final daysOverdue = DateTime.now().difference(task.dueDate!).inDays;
+      final overdueText = daysOverdue == 0 
+          ? 'today' 
+          : daysOverdue == 1 
+              ? '1 day ago' 
+              : '$daysOverdue days ago';
+      
+      showDialog(
+        context: context,
+        builder: (BuildContext context) {
+          return AlertDialog(
+            title: Row(
+              children: [
+                Icon(Icons.error_outline, color: Colors.red),
+                SizedBox(width: 8),
+                Text('Task Overdue'),
+              ],
+            ),
+            content: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  'This task is overdue and cannot be completed.',
+                  style: TextStyle(fontSize: 16),
+                ),
+                SizedBox(height: 12),
+                Container(
+                  padding: EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    color: Colors.red[50],
+                    borderRadius: BorderRadius.circular(8),
+                    border: Border.all(color: Colors.red[200]!),
+                  ),
+                  child: Row(
+                    children: [
+                      Icon(
+                        Icons.info_outline,
+                        color: Colors.red[700],
+                        size: 20,
+                      ),
+                      SizedBox(width: 8),
+                      Expanded(
+                        child: Text(
+                          'Task: ${task.taskName}\nDue: $overdueText',
+                          style: TextStyle(
+                            color: Colors.red[700],
+                            fontSize: 13,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                SizedBox(height: 8),
+                Text(
+                  'Please contact your parent to update the due date or mark the task as complete.',
+                  style: TextStyle(
+                    fontSize: 13,
+                    color: Colors.grey[600],
+                  ),
+                ),
+              ],
+            ),
+            actions: [
+              ElevatedButton(
+                onPressed: () {
+                  Navigator.of(context).pop();
+                },
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: Colors.red,
+                  foregroundColor: Colors.white,
+                ),
+                child: Text('OK'),
+              ),
+            ],
+          );
+        },
+      );
+      return; // Exit early, don't allow completion
+    }
+    
     // Show confirmation dialog
     bool? confirmed = await showDialog<bool>(
       context: context,

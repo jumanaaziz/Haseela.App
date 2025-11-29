@@ -1336,7 +1336,7 @@ class _ParentProfileScreenState extends State<ParentProfileScreen>
                           : 18.sp,
                     ),
                   ),
-                  SizedBox(width: isDesktop ? 16.w : 12.w),
+                  SizedBox(width: isDesktop ? 12.w : 6.w),
                   Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
@@ -1367,7 +1367,7 @@ class _ParentProfileScreenState extends State<ParentProfileScreen>
                     ],
                   ),
                   if (_children.isNotEmpty) ...[
-                    SizedBox(width: isDesktop ? 12.w : 8.w),
+                    SizedBox(width: isDesktop ? 10.w : 6.w),
                     Container(
                       padding: EdgeInsets.symmetric(
                         horizontal: isDesktop ? 12.w : 10.w,
@@ -1482,23 +1482,23 @@ class _ParentProfileScreenState extends State<ParentProfileScreen>
                       child: Padding(
                         padding: EdgeInsets.symmetric(
                           horizontal: isLargeScreen
-                              ? 20.w
-                              : isDesktop
-                              ? 16.w
-                              : isTablet
                               ? 14.w
-                              : isExtraSmallScreen
-                              ? 8.w
-                              : 12.w,
-                          vertical: isLargeScreen
-                              ? 16.h
                               : isDesktop
-                              ? 14.h
+                              ? 12.w
                               : isTablet
-                              ? 12.h
+                              ? 10.w
                               : isExtraSmallScreen
-                              ? 8.h
-                              : 10.h,
+                              ? 6.w
+                              : 8.w,
+                          vertical: isLargeScreen
+                              ? 12.h
+                              : isDesktop
+                              ? 10.h
+                              : isTablet
+                              ? 9.h
+                              : isExtraSmallScreen
+                              ? 6.h
+                              : 8.h,
                         ),
                         child: Row(
                           mainAxisSize: MainAxisSize.min,
@@ -1508,25 +1508,14 @@ class _ParentProfileScreenState extends State<ParentProfileScreen>
                               Icons.add_rounded,
                               color: Colors.white,
                               size: isLargeScreen
-                                  ? 22.sp
-                                  : isDesktop
-                                  ? 20.sp
-                                  : isTablet
                                   ? 18.sp
-                                  : isExtraSmallScreen
-                                  ? 14.sp
-                                  : 16.sp,
-                            ),
-                            SizedBox(
-                              width: isLargeScreen
-                                  ? 10.w
                                   : isDesktop
-                                  ? 8.w
+                                  ? 16.sp
                                   : isTablet
-                                  ? 6.w
+                                  ? 15.sp
                                   : isExtraSmallScreen
-                                  ? 4.w
-                                  : 5.w,
+                                  ? 13.sp
+                                  : 14.sp,
                             ),
                           ],
                         ),
@@ -1728,9 +1717,6 @@ class _ParentProfileScreenState extends State<ParentProfileScreen>
     bool isLargeScreen,
     bool isExtraSmallScreen,
   ) {
-    // Mock data for gamification - in real app, this would come from Firebase
-    final childIndex = _children.indexOf(child);
-
     return Container(
       margin: EdgeInsets.only(
         bottom: isLargeScreen

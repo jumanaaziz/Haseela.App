@@ -66,15 +66,44 @@ Future<void> _firebaseMessagingBackgroundHandler(RemoteMessage message) async {
   // If the message has a notification payload, show it
   // (The OS usually handles this automatically, but we'll show it manually as backup)
   if (message.notification != null) {
-    const AndroidNotificationDetails androidDetails = AndroidNotificationDetails(
-      'task_approval_channel',
-      'Task Approvals',
-      channelDescription: 'Notifications when parent approves your tasks',
+    // Determine notification channel based on message type
+    final messageType = message.data['type'] ?? 'task_approval';
+    final isOverdueTask = messageType == 'overdue_task';
+    
+    // Create notification channel for Android if not exists
+    if (Platform.isAndroid && isOverdueTask) {
+      const AndroidNotificationChannel channel = AndroidNotificationChannel(
+        'overdue_task_channel',
+        'Overdue Tasks',
+        description: 'Notifications when your tasks are overdue',
+        importance: Importance.high,
+        playSound: true,
+      );
+      
+      await _backgroundNotificationsPlugin
+          .resolvePlatformSpecificImplementation<
+              AndroidFlutterLocalNotificationsPlugin>()
+          ?.createNotificationChannel(channel);
+    }
+    
+    // Use appropriate channel based on message type
+    final channelId = isOverdueTask ? 'overdue_task_channel' : 'task_approval_channel';
+    final channelName = isOverdueTask ? 'Overdue Tasks' : 'Task Approvals';
+    final channelDescription = isOverdueTask
+        ? 'Notifications when your tasks are overdue'
+        : 'Notifications when parent approves your tasks';
+    
+    final AndroidNotificationDetails androidDetails = AndroidNotificationDetails(
+      channelId,
+      channelName,
+      channelDescription: channelDescription,
       importance: Importance.high,
       priority: Priority.high,
       showWhen: true,
       playSound: true,
       enableVibration: true,
+      enableLights: true,
+      channelShowBadge: true,
     );
     
     const DarwinNotificationDetails iosDetails = DarwinNotificationDetails(
@@ -83,7 +112,7 @@ Future<void> _firebaseMessagingBackgroundHandler(RemoteMessage message) async {
       presentSound: true,
     );
     
-    const NotificationDetails details = NotificationDetails(
+    final NotificationDetails details = NotificationDetails(
       android: androidDetails,
       iOS: iosDetails,
     );
@@ -96,7 +125,7 @@ Future<void> _firebaseMessagingBackgroundHandler(RemoteMessage message) async {
     );
     
     // ignore: avoid_print
-    print('🔔 Background notification shown: ${message.notification?.title}');
+    print('🔔 Background notification shown: ${message.notification?.title} - ${message.notification?.body}');
   }
   
   // Also handle data-only messages
