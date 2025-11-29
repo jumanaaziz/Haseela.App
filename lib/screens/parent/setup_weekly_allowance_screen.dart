@@ -109,24 +109,94 @@ class _SetUpWeeklyAllowanceScreenState
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text(
-            'Please enter an allowance amount',
-            style: TextStyle(fontSize: 14.sp),
+            'Please enter a weekly allowance amount',
+            style: TextStyle(
+              fontSize: 14.sp,
+              fontWeight: FontWeight.w500,
+              color: Colors.white,
+              fontFamily: 'SPProText',
+            ),
           ),
-          backgroundColor: Colors.grey[700],
+          backgroundColor: const Color(0xFFEF4444),
+          behavior: SnackBarBehavior.floating,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(12.r),
+          ),
+          margin: EdgeInsets.all(16.w),
+          duration: const Duration(seconds: 3),
         ),
       );
       return;
     }
 
     final weeklyAmount = double.tryParse(amount.trim());
-    if (weeklyAmount == null || weeklyAmount <= 0) {
+    if (weeklyAmount == null) {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text(
-            'Please enter a valid amount',
-            style: TextStyle(fontSize: 14.sp),
+            'Please enter a valid number',
+            style: TextStyle(
+              fontSize: 14.sp,
+              fontWeight: FontWeight.w500,
+              color: Colors.white,
+              fontFamily: 'SPProText',
+            ),
           ),
-          backgroundColor: Colors.grey[700],
+          backgroundColor: const Color(0xFFEF4444),
+          behavior: SnackBarBehavior.floating,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(12.r),
+          ),
+          margin: EdgeInsets.all(16.w),
+          duration: const Duration(seconds: 3),
+        ),
+      );
+      return;
+    }
+
+    if (weeklyAmount < 0) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            'Amount cannot be negative. Please enter a positive number',
+            style: TextStyle(
+              fontSize: 14.sp,
+              fontWeight: FontWeight.w500,
+              color: Colors.white,
+              fontFamily: 'SPProText',
+            ),
+          ),
+          backgroundColor: const Color(0xFFEF4444),
+          behavior: SnackBarBehavior.floating,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(12.r),
+          ),
+          margin: EdgeInsets.all(16.w),
+          duration: const Duration(seconds: 3),
+        ),
+      );
+      return;
+    }
+
+    if (weeklyAmount == 0) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            'Amount must be greater than 0',
+            style: TextStyle(
+              fontSize: 14.sp,
+              fontWeight: FontWeight.w500,
+              color: Colors.white,
+              fontFamily: 'SPProText',
+            ),
+          ),
+          backgroundColor: const Color(0xFFEF4444),
+          behavior: SnackBarBehavior.floating,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(12.r),
+          ),
+          margin: EdgeInsets.all(16.w),
+          duration: const Duration(seconds: 3),
         ),
       );
       return;
@@ -598,6 +668,7 @@ class _AllowanceSettingsSheetState extends State<_AllowanceSettingsSheet> {
   final TextEditingController _amountController = TextEditingController();
   String _selectedDay = 'Sunday';
   bool _isEnabled = true;
+  String? _amountError;
 
   @override
   void initState() {
@@ -620,24 +691,126 @@ class _AllowanceSettingsSheetState extends State<_AllowanceSettingsSheet> {
   Future<void> _handleSave() async {
     if (widget.isSaving) return; // Prevent multiple saves
 
-    if (_amountController.text.trim().isEmpty) {
+    // Clear previous error
+    setState(() {
+      _amountError = null;
+    });
+
+    final amountText = _amountController.text.trim();
+
+    if (amountText.isEmpty) {
+      setState(() {
+        _amountError = 'Please enter an amount';
+      });
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text(
-            'Please enter an allowance amount',
-            style: TextStyle(fontSize: 14.sp),
+            'Please enter a weekly allowance amount',
+            style: TextStyle(
+              fontSize: 14.sp,
+              fontWeight: FontWeight.w500,
+              color: Colors.white,
+              fontFamily: 'SPProText',
+            ),
           ),
-          backgroundColor: Colors.grey[700],
+          backgroundColor: const Color(0xFFEF4444),
+          behavior: SnackBarBehavior.floating,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(12.r),
+          ),
+          margin: EdgeInsets.all(16.w),
+          duration: const Duration(seconds: 3),
         ),
       );
       return;
     }
 
-    await widget.onSave(
-      _amountController.text.trim(),
-      _selectedDay,
-      _isEnabled,
-    );
+    // Check if the amount is a valid number
+    final amount = double.tryParse(amountText);
+    if (amount == null) {
+      setState(() {
+        _amountError = 'Please enter a valid number';
+      });
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            'Please enter a valid number',
+            style: TextStyle(
+              fontSize: 14.sp,
+              fontWeight: FontWeight.w500,
+              color: Colors.white,
+              fontFamily: 'SPProText',
+            ),
+          ),
+          backgroundColor: const Color(0xFFEF4444),
+          behavior: SnackBarBehavior.floating,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(12.r),
+          ),
+          margin: EdgeInsets.all(16.w),
+          duration: const Duration(seconds: 3),
+        ),
+      );
+      return;
+    }
+
+    // Check if the amount is negative
+    if (amount < 0) {
+      setState(() {
+        _amountError = 'Amount cannot be negative';
+      });
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            'Amount cannot be negative. Please enter a positive number',
+            style: TextStyle(
+              fontSize: 14.sp,
+              fontWeight: FontWeight.w500,
+              color: Colors.white,
+              fontFamily: 'SPProText',
+            ),
+          ),
+          backgroundColor: const Color(0xFFEF4444),
+          behavior: SnackBarBehavior.floating,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(12.r),
+          ),
+          margin: EdgeInsets.all(16.w),
+          duration: const Duration(seconds: 3),
+        ),
+      );
+      return;
+    }
+
+    // Check if the amount is zero
+    if (amount == 0) {
+      setState(() {
+        _amountError = 'Amount must be greater than 0';
+      });
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            'Amount must be greater than 0',
+            style: TextStyle(
+              fontSize: 14.sp,
+              fontWeight: FontWeight.w500,
+              color: Colors.white,
+              fontFamily: 'SPProText',
+            ),
+          ),
+          backgroundColor: const Color(0xFFEF4444),
+          behavior: SnackBarBehavior.floating,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(12.r),
+          ),
+          margin: EdgeInsets.all(16.w),
+          duration: const Duration(seconds: 3),
+        ),
+      );
+      return;
+    }
+
+    await widget.onSave(amountText, _selectedDay, _isEnabled);
   }
 
   @override
@@ -675,413 +848,513 @@ class _AllowanceSettingsSheetState extends State<_AllowanceSettingsSheet> {
               ),
             ),
 
-            // Header
-            Padding(
-              padding: EdgeInsets.fromLTRB(24.w, 8.h, 24.w, 24.h),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    'Allowance Settings',
-                    style: TextStyle(
-                      fontSize: 22.sp,
-                      fontWeight: FontWeight.w700,
-                      color: const Color(0xFF1C1243),
-                    ),
-                  ),
-                  SizedBox(height: 8.h),
-                  Text(
-                    'For ${selectedChildren.length} ${selectedChildren.length == 1 ? 'child' : 'children'}',
-                    style: TextStyle(
-                      fontSize: 14.sp,
-                      fontWeight: FontWeight.w400,
-                      color: const Color(0xFF64748B),
-                    ),
-                  ),
-                ],
-              ),
-            ),
-
-            // Selected Children List with Delete Options
-            if (selectedChildren.length > 1)
-              Padding(
-                padding: EdgeInsets.symmetric(horizontal: 24.w),
+            // Scrollable content
+            Flexible(
+              child: SingleChildScrollView(
                 child: Column(
+                  mainAxisSize: MainAxisSize.min,
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text(
-                      'Selected Children',
-                      style: TextStyle(
-                        fontSize: 14.sp,
-                        fontWeight: FontWeight.w600,
-                        color: const Color(0xFF1C1243),
+                    // Header
+                    Padding(
+                      padding: EdgeInsets.fromLTRB(24.w, 8.h, 24.w, 24.h),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            'Allowance Settings',
+                            style: TextStyle(
+                              fontSize: 22.sp,
+                              fontWeight: FontWeight.w700,
+                              color: const Color(0xFF1C1243),
+                            ),
+                          ),
+                          SizedBox(height: 8.h),
+                          Text(
+                            'For ${selectedChildren.length} ${selectedChildren.length == 1 ? 'child' : 'children'}',
+                            style: TextStyle(
+                              fontSize: 14.sp,
+                              fontWeight: FontWeight.w400,
+                              color: const Color(0xFF64748B),
+                            ),
+                          ),
+                        ],
                       ),
                     ),
-                    SizedBox(height: 12.h),
-                    ...selectedChildren.map((child) {
-                      return Container(
-                        margin: EdgeInsets.only(bottom: 8.h),
-                        padding: EdgeInsets.all(12.w),
-                        decoration: BoxDecoration(
-                          color: const Color(0xFFF7F9FC),
-                          borderRadius: BorderRadius.circular(12.r),
-                          border: Border.all(
-                            color: const Color(0xFFE2E8F0),
-                            width: 1,
-                          ),
-                        ),
-                        child: Row(
+
+                    // Selected Children List with Delete Options
+                    if (selectedChildren.length > 1)
+                      Padding(
+                        padding: EdgeInsets.symmetric(horizontal: 24.w),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          mainAxisSize: MainAxisSize.min,
                           children: [
-                            // Avatar
-                            Container(
-                              width: 40.w,
-                              height: 40.w,
-                              decoration: BoxDecoration(
-                                shape: BoxShape.circle,
-                                color: const Color(0xFFE2E8F0),
+                            Text(
+                              'Selected Children',
+                              style: TextStyle(
+                                fontSize: 14.sp,
+                                fontWeight: FontWeight.w600,
+                                color: const Color(0xFF1C1243),
                               ),
-                              child:
-                                  child.avatar != null &&
-                                      child.avatar!.isNotEmpty
-                                  ? ClipOval(
-                                      child: Image.network(
-                                        child.avatar!,
-                                        width: 40.w,
-                                        height: 40.w,
-                                        fit: BoxFit.cover,
-                                        errorBuilder:
-                                            (context, error, stackTrace) {
-                                              return Center(
-                                                child: Text(
-                                                  child.initial,
-                                                  style: TextStyle(
-                                                    fontSize: 16.sp,
-                                                    fontWeight: FontWeight.w600,
-                                                    color: const Color(
-                                                      0xFF64748B,
+                            ),
+                            SizedBox(height: 12.h),
+                            ConstrainedBox(
+                              constraints: BoxConstraints(
+                                maxHeight: 200.h, // Maximum height for the list
+                              ),
+                              child: SingleChildScrollView(
+                                child: Column(
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: selectedChildren.map((child) {
+                                    return Container(
+                                      margin: EdgeInsets.only(bottom: 8.h),
+                                      padding: EdgeInsets.all(12.w),
+                                      decoration: BoxDecoration(
+                                        color: const Color(0xFFF7F9FC),
+                                        borderRadius: BorderRadius.circular(
+                                          12.r,
+                                        ),
+                                        border: Border.all(
+                                          color: const Color(0xFFE2E8F0),
+                                          width: 1,
+                                        ),
+                                      ),
+                                      child: Row(
+                                        children: [
+                                          // Avatar
+                                          Container(
+                                            width: 40.w,
+                                            height: 40.w,
+                                            decoration: BoxDecoration(
+                                              shape: BoxShape.circle,
+                                              color: const Color(0xFFE2E8F0),
+                                            ),
+                                            child:
+                                                child.avatar != null &&
+                                                    child.avatar!.isNotEmpty
+                                                ? ClipOval(
+                                                    child: Image.network(
+                                                      child.avatar!,
+                                                      width: 40.w,
+                                                      height: 40.w,
+                                                      fit: BoxFit.cover,
+                                                      errorBuilder:
+                                                          (
+                                                            context,
+                                                            error,
+                                                            stackTrace,
+                                                          ) {
+                                                            return Center(
+                                                              child: Text(
+                                                                child.initial,
+                                                                style: TextStyle(
+                                                                  fontSize:
+                                                                      16.sp,
+                                                                  fontWeight:
+                                                                      FontWeight
+                                                                          .w600,
+                                                                  color: const Color(
+                                                                    0xFF64748B,
+                                                                  ),
+                                                                ),
+                                                              ),
+                                                            );
+                                                          },
+                                                    ),
+                                                  )
+                                                : Center(
+                                                    child: Text(
+                                                      child.initial,
+                                                      style: TextStyle(
+                                                        fontSize: 16.sp,
+                                                        fontWeight:
+                                                            FontWeight.w600,
+                                                        color: const Color(
+                                                          0xFF64748B,
+                                                        ),
+                                                      ),
                                                     ),
                                                   ),
-                                                ),
-                                              );
-                                            },
-                                      ),
-                                    )
-                                  : Center(
-                                      child: Text(
-                                        child.initial,
-                                        style: TextStyle(
-                                          fontSize: 16.sp,
-                                          fontWeight: FontWeight.w600,
-                                          color: const Color(0xFF64748B),
-                                        ),
-                                      ),
-                                    ),
-                            ),
-                            SizedBox(width: 12.w),
-                            // Child Name
-                            Expanded(
-                              child: Text(
-                                child.fullName,
-                                style: TextStyle(
-                                  fontSize: 14.sp,
-                                  fontWeight: FontWeight.w500,
-                                  color: const Color(0xFF1C1243),
-                                ),
-                                overflow: TextOverflow.ellipsis,
-                                maxLines: 1,
-                              ),
-                            ),
-                            // Remove Button
-                            IconButton(
-                              icon: Icon(
-                                Icons.close_rounded,
-                                color: Colors.grey[500],
-                                size: 18.sp,
-                              ),
-                              onPressed: widget.isSaving
-                                  ? null
-                                  : () {
-                                      widget.onDeleteChild(child.id);
-                                    },
-                              tooltip: 'Remove child',
-                              constraints: BoxConstraints(
-                                minWidth: 36.w,
-                                minHeight: 36.h,
-                              ),
-                              padding: EdgeInsets.zero,
-                            ),
-                          ],
-                        ),
-                      );
-                    }).toList(),
-                    SizedBox(height: 24.h),
-                  ],
-                ),
-              )
-            else if (selectedChildren.length == 1)
-              Padding(
-                padding: EdgeInsets.symmetric(horizontal: 24.w),
-                child: Container(
-                  margin: EdgeInsets.only(bottom: 24.h),
-                  padding: EdgeInsets.all(12.w),
-                  decoration: BoxDecoration(
-                    color: const Color(0xFFF7F9FC),
-                    borderRadius: BorderRadius.circular(12.r),
-                    border: Border.all(
-                      color: const Color(0xFFE2E8F0),
-                      width: 1,
-                    ),
-                  ),
-                  child: Row(
-                    children: [
-                      // Avatar
-                      Container(
-                        width: 40.w,
-                        height: 40.w,
-                        decoration: BoxDecoration(
-                          shape: BoxShape.circle,
-                          color: const Color(0xFFE2E8F0),
-                        ),
-                        child:
-                            selectedChildren[0].avatar != null &&
-                                selectedChildren[0].avatar!.isNotEmpty
-                            ? ClipOval(
-                                child: Image.network(
-                                  selectedChildren[0].avatar!,
-                                  width: 40.w,
-                                  height: 40.w,
-                                  fit: BoxFit.cover,
-                                  errorBuilder: (context, error, stackTrace) {
-                                    return Center(
-                                      child: Text(
-                                        selectedChildren[0].initial,
-                                        style: TextStyle(
-                                          fontSize: 16.sp,
-                                          fontWeight: FontWeight.w600,
-                                          color: const Color(0xFF64748B),
-                                        ),
+                                          ),
+                                          SizedBox(width: 12.w),
+                                          // Child Name
+                                          Expanded(
+                                            child: Text(
+                                              child.fullName,
+                                              style: TextStyle(
+                                                fontSize: 14.sp,
+                                                fontWeight: FontWeight.w500,
+                                                color: const Color(0xFF1C1243),
+                                              ),
+                                              overflow: TextOverflow.ellipsis,
+                                              maxLines: 1,
+                                            ),
+                                          ),
+                                          // Remove Button
+                                          IconButton(
+                                            icon: Icon(
+                                              Icons.close_rounded,
+                                              color: Colors.grey[500],
+                                              size: 18.sp,
+                                            ),
+                                            onPressed: widget.isSaving
+                                                ? null
+                                                : () {
+                                                    widget.onDeleteChild(
+                                                      child.id,
+                                                    );
+                                                  },
+                                            tooltip: 'Remove child',
+                                            constraints: BoxConstraints(
+                                              minWidth: 36.w,
+                                              minHeight: 36.h,
+                                            ),
+                                            padding: EdgeInsets.zero,
+                                          ),
+                                        ],
                                       ),
                                     );
-                                  },
+                                  }).toList(),
                                 ),
-                              )
-                            : Center(
+                              ),
+                            ),
+                            SizedBox(height: 24.h),
+                          ],
+                        ),
+                      ),
+                    if (selectedChildren.length == 1)
+                      Padding(
+                        padding: EdgeInsets.symmetric(horizontal: 24.w),
+                        child: Container(
+                          margin: EdgeInsets.only(bottom: 24.h),
+                          padding: EdgeInsets.all(12.w),
+                          decoration: BoxDecoration(
+                            color: const Color(0xFFF7F9FC),
+                            borderRadius: BorderRadius.circular(12.r),
+                            border: Border.all(
+                              color: const Color(0xFFE2E8F0),
+                              width: 1,
+                            ),
+                          ),
+                          child: Row(
+                            children: [
+                              // Avatar
+                              Container(
+                                width: 40.w,
+                                height: 40.w,
+                                decoration: BoxDecoration(
+                                  shape: BoxShape.circle,
+                                  color: const Color(0xFFE2E8F0),
+                                ),
+                                child:
+                                    selectedChildren[0].avatar != null &&
+                                        selectedChildren[0].avatar!.isNotEmpty
+                                    ? ClipOval(
+                                        child: Image.network(
+                                          selectedChildren[0].avatar!,
+                                          width: 40.w,
+                                          height: 40.w,
+                                          fit: BoxFit.cover,
+                                          errorBuilder:
+                                              (context, error, stackTrace) {
+                                                return Center(
+                                                  child: Text(
+                                                    selectedChildren[0].initial,
+                                                    style: TextStyle(
+                                                      fontSize: 16.sp,
+                                                      fontWeight:
+                                                          FontWeight.w600,
+                                                      color: const Color(
+                                                        0xFF64748B,
+                                                      ),
+                                                    ),
+                                                  ),
+                                                );
+                                              },
+                                        ),
+                                      )
+                                    : Center(
+                                        child: Text(
+                                          selectedChildren[0].initial,
+                                          style: TextStyle(
+                                            fontSize: 16.sp,
+                                            fontWeight: FontWeight.w600,
+                                            color: const Color(0xFF64748B),
+                                          ),
+                                        ),
+                                      ),
+                              ),
+                              SizedBox(width: 12.w),
+                              // Child Name
+                              Expanded(
                                 child: Text(
-                                  selectedChildren[0].initial,
+                                  selectedChildren[0].fullName,
+                                  style: TextStyle(
+                                    fontSize: 14.sp,
+                                    fontWeight: FontWeight.w500,
+                                    color: const Color(0xFF1C1243),
+                                  ),
+                                  overflow: TextOverflow.ellipsis,
+                                  maxLines: 1,
+                                ),
+                              ),
+                              // Remove Button
+                              IconButton(
+                                icon: Icon(
+                                  Icons.close_rounded,
+                                  color: Colors.grey[500],
+                                  size: 18.sp,
+                                ),
+                                onPressed: widget.isSaving
+                                    ? null
+                                    : () {
+                                        widget.onDeleteChild(
+                                          selectedChildren[0].id,
+                                        );
+                                      },
+                                tooltip: 'Remove child',
+                                constraints: BoxConstraints(
+                                  minWidth: 36.w,
+                                  minHeight: 36.h,
+                                ),
+                                padding: EdgeInsets.zero,
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
+
+                    // Settings Form
+                    Padding(
+                      padding: EdgeInsets.symmetric(horizontal: 24.w),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          // Amount Input
+                          Text(
+                            'Amount',
+                            style: TextStyle(
+                              fontSize: 14.sp,
+                              fontWeight: FontWeight.w500,
+                              color: const Color(0xFF1C1243),
+                            ),
+                          ),
+                          SizedBox(height: 8.h),
+                          TextField(
+                            controller: _amountController,
+                            keyboardType: TextInputType.number,
+                            enabled: !widget.isSaving,
+                            onChanged: (value) {
+                              // Real-time validation
+                              setState(() {
+                                if (value.trim().isEmpty) {
+                                  _amountError =
+                                      null; // Clear error when field is empty
+                                } else {
+                                  final amount = double.tryParse(value.trim());
+                                  if (amount == null) {
+                                    _amountError =
+                                        'Please enter a valid number';
+                                  } else if (amount < 0) {
+                                    _amountError = 'Amount cannot be negative';
+                                  } else if (amount == 0) {
+                                    _amountError =
+                                        'Amount must be greater than 0';
+                                  } else {
+                                    _amountError = null; // Clear error if valid
+                                  }
+                                }
+                              });
+                            },
+                            decoration: InputDecoration(
+                              hintText: 'Enter weekly amount',
+                              suffixText: 'SAR',
+                              suffixStyle: TextStyle(
+                                fontSize: 14.sp,
+                                color: const Color(0xFF64748B),
+                              ),
+                              errorText: _amountError,
+                              errorStyle: TextStyle(
+                                fontSize: 12.sp,
+                                color: const Color(0xFFEF4444),
+                                fontFamily: 'SPProText',
+                              ),
+                              border: OutlineInputBorder(
+                                borderRadius: BorderRadius.circular(12.r),
+                                borderSide: BorderSide(
+                                  color: _amountError != null
+                                      ? const Color(0xFFEF4444)
+                                      : const Color(0xFFE2E8F0),
+                                ),
+                              ),
+                              enabledBorder: OutlineInputBorder(
+                                borderRadius: BorderRadius.circular(12.r),
+                                borderSide: BorderSide(
+                                  color: _amountError != null
+                                      ? const Color(0xFFEF4444)
+                                      : const Color(0xFFE2E8F0),
+                                ),
+                              ),
+                              focusedBorder: OutlineInputBorder(
+                                borderRadius: BorderRadius.circular(12.r),
+                                borderSide: BorderSide(
+                                  color: _amountError != null
+                                      ? const Color(0xFFEF4444)
+                                      : const Color(0xFFFF8A00),
+                                  width: 2,
+                                ),
+                              ),
+                              errorBorder: OutlineInputBorder(
+                                borderRadius: BorderRadius.circular(12.r),
+                                borderSide: const BorderSide(
+                                  color: Color(0xFFEF4444),
+                                  width: 2,
+                                ),
+                              ),
+                              focusedErrorBorder: OutlineInputBorder(
+                                borderRadius: BorderRadius.circular(12.r),
+                                borderSide: const BorderSide(
+                                  color: Color(0xFFEF4444),
+                                  width: 2,
+                                ),
+                              ),
+                              filled: true,
+                              fillColor: _amountError != null
+                                  ? const Color(0xFFFEF2F2)
+                                  : const Color(0xFFF7F9FC),
+                              contentPadding: EdgeInsets.symmetric(
+                                horizontal: 16.w,
+                                vertical: 16.h,
+                              ),
+                            ),
+                            style: TextStyle(
+                              fontSize: 16.sp,
+                              fontWeight: FontWeight.w500,
+                              color: const Color(0xFF1C1243),
+                            ),
+                          ),
+                          SizedBox(height: 24.h),
+
+                          // Day Dropdown
+                          Text(
+                            'Day of Week',
+                            style: TextStyle(
+                              fontSize: 14.sp,
+                              fontWeight: FontWeight.w500,
+                              color: const Color(0xFF1C1243),
+                            ),
+                          ),
+                          SizedBox(height: 8.h),
+                          DropdownButtonFormField<String>(
+                            value: _selectedDay,
+                            decoration: InputDecoration(
+                              prefixIcon: Icon(
+                                Icons.calendar_today_rounded,
+                                color: const Color(0xFF64748B),
+                                size: 20.sp,
+                              ),
+                              border: OutlineInputBorder(
+                                borderRadius: BorderRadius.circular(12.r),
+                                borderSide: BorderSide(
+                                  color: const Color(0xFFE2E8F0),
+                                ),
+                              ),
+                              enabledBorder: OutlineInputBorder(
+                                borderRadius: BorderRadius.circular(12.r),
+                                borderSide: BorderSide(
+                                  color: const Color(0xFFE2E8F0),
+                                ),
+                              ),
+                              focusedBorder: OutlineInputBorder(
+                                borderRadius: BorderRadius.circular(12.r),
+                                borderSide: BorderSide(
+                                  color: const Color(0xFFFF8A00),
+                                  width: 2,
+                                ),
+                              ),
+                              filled: true,
+                              fillColor: const Color(0xFFF7F9FC),
+                              contentPadding: EdgeInsets.symmetric(
+                                horizontal: 16.w,
+                                vertical: 16.h,
+                              ),
+                            ),
+                            items: widget.daysOfWeek.map((day) {
+                              return DropdownMenuItem(
+                                value: day,
+                                child: Text(
+                                  day,
                                   style: TextStyle(
                                     fontSize: 16.sp,
-                                    fontWeight: FontWeight.w600,
-                                    color: const Color(0xFF64748B),
+                                    fontWeight: FontWeight.w500,
+                                    color: const Color(0xFF1C1243),
+                                  ),
+                                ),
+                              );
+                            }).toList(),
+                            onChanged: widget.isSaving
+                                ? null
+                                : (value) {
+                                    if (value != null) {
+                                      setState(() {
+                                        _selectedDay = value;
+                                      });
+                                    }
+                                  },
+                          ),
+                          SizedBox(height: 24.h),
+
+                          // Enable/Disable Toggle
+                          Row(
+                            children: [
+                              Expanded(
+                                child: Text(
+                                  'Enable Weekly Allowance',
+                                  style: TextStyle(
+                                    fontSize: 16.sp,
+                                    fontWeight: FontWeight.w500,
+                                    color: const Color(0xFF1C1243),
                                   ),
                                 ),
                               ),
-                      ),
-                      SizedBox(width: 12.w),
-                      // Child Name
-                      Expanded(
-                        child: Text(
-                          selectedChildren[0].fullName,
-                          style: TextStyle(
-                            fontSize: 14.sp,
-                            fontWeight: FontWeight.w500,
-                            color: const Color(0xFF1C1243),
+                              Switch(
+                                value: _isEnabled,
+                                onChanged: widget.isSaving
+                                    ? null
+                                    : (value) {
+                                        setState(() {
+                                          _isEnabled = value;
+                                        });
+                                      },
+                                activeColor: const Color(0xFFFF8A00),
+                              ),
+                            ],
                           ),
-                          overflow: TextOverflow.ellipsis,
-                          maxLines: 1,
-                        ),
+                          SizedBox(height: 8.h),
+                          // Description text
+                          Padding(
+                            padding: EdgeInsets.only(left: 4.w),
+                            child: Text(
+                              _isEnabled
+                                  ? 'When enabled, the weekly allowance will be automatically sent to your child every week on the selected day.'
+                                  : 'When disabled, the weekly allowance is paused. No automatic payments will be sent, even if an amount and day are saved.',
+                              style: TextStyle(
+                                fontSize: 12.sp,
+                                fontWeight: FontWeight.w400,
+                                color: const Color(0xFF64748B),
+                                height: 1.4,
+                              ),
+                              softWrap: true,
+                              overflow: TextOverflow.visible,
+                            ),
+                          ),
+                          SizedBox(height: 32.h),
+                        ],
                       ),
-                      // Remove Button
-                      IconButton(
-                        icon: Icon(
-                          Icons.close_rounded,
-                          color: Colors.grey[500],
-                          size: 18.sp,
-                        ),
-                        onPressed: widget.isSaving
-                            ? null
-                            : () {
-                                widget.onDeleteChild(selectedChildren[0].id);
-                              },
-                        tooltip: 'Remove child',
-                        constraints: BoxConstraints(
-                          minWidth: 36.w,
-                          minHeight: 36.h,
-                        ),
-                        padding: EdgeInsets.zero,
-                      ),
-                    ],
-                  ),
+                    ),
+                  ],
                 ),
-              ),
-
-            // Settings Form
-            Padding(
-              padding: EdgeInsets.symmetric(horizontal: 24.w),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  // Amount Input
-                  Text(
-                    'Amount',
-                    style: TextStyle(
-                      fontSize: 14.sp,
-                      fontWeight: FontWeight.w500,
-                      color: const Color(0xFF1C1243),
-                    ),
-                  ),
-                  SizedBox(height: 8.h),
-                  TextField(
-                    controller: _amountController,
-                    keyboardType: TextInputType.number,
-                    enabled: !widget.isSaving,
-                    decoration: InputDecoration(
-                      hintText: 'Enter weekly amount',
-                      suffixText: 'SAR',
-                      suffixStyle: TextStyle(
-                        fontSize: 14.sp,
-                        color: const Color(0xFF64748B),
-                      ),
-                      border: OutlineInputBorder(
-                        borderRadius: BorderRadius.circular(12.r),
-                        borderSide: BorderSide(color: const Color(0xFFE2E8F0)),
-                      ),
-                      enabledBorder: OutlineInputBorder(
-                        borderRadius: BorderRadius.circular(12.r),
-                        borderSide: BorderSide(color: const Color(0xFFE2E8F0)),
-                      ),
-                      focusedBorder: OutlineInputBorder(
-                        borderRadius: BorderRadius.circular(12.r),
-                        borderSide: BorderSide(
-                          color: const Color(0xFFFF8A00),
-                          width: 2,
-                        ),
-                      ),
-                      filled: true,
-                      fillColor: const Color(0xFFF7F9FC),
-                      contentPadding: EdgeInsets.symmetric(
-                        horizontal: 16.w,
-                        vertical: 16.h,
-                      ),
-                    ),
-                    style: TextStyle(
-                      fontSize: 16.sp,
-                      fontWeight: FontWeight.w500,
-                      color: const Color(0xFF1C1243),
-                    ),
-                  ),
-                  SizedBox(height: 24.h),
-
-                  // Day Dropdown
-                  Text(
-                    'Day of Week',
-                    style: TextStyle(
-                      fontSize: 14.sp,
-                      fontWeight: FontWeight.w500,
-                      color: const Color(0xFF1C1243),
-                    ),
-                  ),
-                  SizedBox(height: 8.h),
-                  DropdownButtonFormField<String>(
-                    value: _selectedDay,
-                    decoration: InputDecoration(
-                      prefixIcon: Icon(
-                        Icons.calendar_today_rounded,
-                        color: const Color(0xFF64748B),
-                        size: 20.sp,
-                      ),
-                      border: OutlineInputBorder(
-                        borderRadius: BorderRadius.circular(12.r),
-                        borderSide: BorderSide(color: const Color(0xFFE2E8F0)),
-                      ),
-                      enabledBorder: OutlineInputBorder(
-                        borderRadius: BorderRadius.circular(12.r),
-                        borderSide: BorderSide(color: const Color(0xFFE2E8F0)),
-                      ),
-                      focusedBorder: OutlineInputBorder(
-                        borderRadius: BorderRadius.circular(12.r),
-                        borderSide: BorderSide(
-                          color: const Color(0xFFFF8A00),
-                          width: 2,
-                        ),
-                      ),
-                      filled: true,
-                      fillColor: const Color(0xFFF7F9FC),
-                      contentPadding: EdgeInsets.symmetric(
-                        horizontal: 16.w,
-                        vertical: 16.h,
-                      ),
-                    ),
-                    items: widget.daysOfWeek.map((day) {
-                      return DropdownMenuItem(
-                        value: day,
-                        child: Text(
-                          day,
-                          style: TextStyle(
-                            fontSize: 16.sp,
-                            fontWeight: FontWeight.w500,
-                            color: const Color(0xFF1C1243),
-                          ),
-                        ),
-                      );
-                    }).toList(),
-                    onChanged: widget.isSaving
-                        ? null
-                        : (value) {
-                            if (value != null) {
-                              setState(() {
-                                _selectedDay = value;
-                              });
-                            }
-                          },
-                  ),
-                  SizedBox(height: 24.h),
-
-                  // Enable/Disable Toggle
-                  Row(
-                    children: [
-                      Expanded(
-                        child: Text(
-                          'Enable Weekly Allowance',
-                          style: TextStyle(
-                            fontSize: 16.sp,
-                            fontWeight: FontWeight.w500,
-                            color: const Color(0xFF1C1243),
-                          ),
-                        ),
-                      ),
-                      Switch(
-                        value: _isEnabled,
-                        onChanged: widget.isSaving
-                            ? null
-                            : (value) {
-                                setState(() {
-                                  _isEnabled = value;
-                                });
-                              },
-                        activeColor: const Color(0xFFFF8A00),
-                      ),
-                    ],
-                  ),
-                  SizedBox(height: 8.h),
-                  // Description text
-                  Padding(
-                    padding: EdgeInsets.only(left: 4.w),
-                    child: Text(
-                      _isEnabled
-                          ? 'When enabled, the weekly allowance will be automatically sent to your child every week on the selected day.'
-                          : 'When disabled, the weekly allowance is paused. No automatic payments will be sent, even if an amount and day are saved.',
-                      style: TextStyle(
-                        fontSize: 12.sp,
-                        fontWeight: FontWeight.w400,
-                        color: const Color(0xFF64748B),
-                        height: 1.4,
-                      ),
-                      softWrap: true,
-                      overflow: TextOverflow.visible,
-                    ),
-                  ),
-                  SizedBox(height: 32.h),
-                ],
               ),
             ),
 
