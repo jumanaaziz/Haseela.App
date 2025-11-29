@@ -8,8 +8,6 @@ import '../services/firebase_service.dart';
 import 'spending_wallet_screen.dart';
 import 'saving_wallet_screen.dart';
 import 'transfer_screen.dart';
-import '../../widgets/custom_bottom_nav.dart';
-import '../../widgets/custom_bottom_nav.dart';
 import 'package:haseela_app/screens/child/child_task_view_screen.dart';
 import 'package:haseela_app/screens/child/wishlist_screen.dart';
 import 'package:firebase_auth/firebase_auth.dart';
@@ -18,6 +16,7 @@ import 'package:http/http.dart' as http; // ✅ Add this line
 import 'auto_currency_scanner_screen.dart'; // Import the new scanner
 import 'dart:convert';
 import 'haseela_lessons_overview_screen.dart';
+import '../../models/allowance_settings.dart';
 
 class HomeScreen extends StatefulWidget {
   final String parentId;
@@ -315,6 +314,8 @@ class _HomeScreenState extends State<HomeScreen> {
               _buildWalletCards(),
               SizedBox(height: 16.h),
               _buildAddMoneyCard(),
+              SizedBox(height: 24.h),
+              _buildAllowanceSection(),
               SizedBox(height: 24.h),
               Text(
                 "Your Lessons",
@@ -1514,6 +1515,275 @@ class _HomeScreenState extends State<HomeScreen> {
           TextButton(
             onPressed: () => Navigator.pop(context),
             child: Text('OK'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildAllowanceSection() {
+    return StreamBuilder<DocumentSnapshot<Map<String, dynamic>>>(
+      stream: FirebaseFirestore.instance
+          .collection('Parents')
+          .doc(parentId)
+          .collection('Children')
+          .doc(childId)
+          .collection('allowanceSettings')
+          .doc('settings')
+          .snapshots(),
+      builder: (context, snapshot) {
+        if (snapshot.connectionState == ConnectionState.waiting) {
+          return Container(
+            width: double.infinity,
+            padding: EdgeInsets.all(20.w),
+            decoration: BoxDecoration(
+              color: Colors.white,
+              borderRadius: BorderRadius.circular(20.r),
+              boxShadow: [
+                BoxShadow(
+                  color: Colors.black.withOpacity(0.05),
+                  blurRadius: 10.r,
+                  offset: Offset(0, 4.h),
+                ),
+              ],
+            ),
+            child: Center(
+              child: CircularProgressIndicator(
+                valueColor: AlwaysStoppedAnimation<Color>(
+                  const Color(0xFF643FDB),
+                ),
+              ),
+            ),
+          );
+        }
+
+        AllowanceSettings? allowance;
+        if (snapshot.hasData &&
+            snapshot.data!.exists &&
+            snapshot.data!.data() != null) {
+          try {
+            allowance = AllowanceSettings.fromFirestore(snapshot.data!);
+          } catch (e) {
+            print('❌ Error parsing allowance settings: $e');
+          }
+        }
+
+        return _buildAllowanceCard(allowance);
+      },
+    );
+  }
+
+  Widget _buildAllowanceCard(AllowanceSettings? allowance) {
+    // No allowance exists
+    if (allowance == null) {
+      return Container(
+        width: double.infinity,
+        padding: EdgeInsets.all(20.w),
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(20.r),
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withOpacity(0.05),
+              blurRadius: 10.r,
+              offset: Offset(0, 4.h),
+            ),
+          ],
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Container(
+                  padding: EdgeInsets.all(12.w),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFF718096).withOpacity(0.1),
+                    borderRadius: BorderRadius.circular(12.r),
+                  ),
+                  child: Icon(
+                    Icons.account_balance_wallet_outlined,
+                    color: const Color(0xFF718096),
+                    size: 24.sp,
+                  ),
+                ),
+                SizedBox(width: 12.w),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        "No Weekly Allowance",
+                        style: TextStyle(
+                          fontSize: 18.sp,
+                          fontWeight: FontWeight.w800,
+                          color: const Color(0xFF2D3748),
+                          fontFamily: 'SF Pro Text',
+                        ),
+                      ),
+                      SizedBox(height: 4.h),
+                      Text(
+                        "You are not receiving any allowance at the moment.",
+                        style: TextStyle(
+                          fontSize: 14.sp,
+                          fontWeight: FontWeight.w500,
+                          color: const Color(0xFF718096),
+                          fontFamily: 'SF Pro Text',
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+          ],
+        ),
+      );
+    }
+
+    // Allowance exists but is disabled
+    if (!allowance.isEnabled) {
+      return Container(
+        width: double.infinity,
+        padding: EdgeInsets.all(20.w),
+        decoration: BoxDecoration(
+          gradient: LinearGradient(
+            begin: Alignment.topLeft,
+            end: Alignment.bottomRight,
+            colors: [
+              const Color(0xFFF59E0B).withOpacity(0.1),
+              const Color(0xFFEF4444).withOpacity(0.1),
+            ],
+          ),
+          borderRadius: BorderRadius.circular(20.r),
+          border: Border.all(
+            color: const Color(0xFFF59E0B).withOpacity(0.3),
+            width: 1,
+          ),
+          boxShadow: [
+            BoxShadow(
+              color: const Color(0xFFF59E0B).withOpacity(0.1),
+              blurRadius: 10.r,
+              offset: Offset(0, 4.h),
+            ),
+          ],
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Container(
+                  padding: EdgeInsets.all(12.w),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFFF59E0B).withOpacity(0.2),
+                    borderRadius: BorderRadius.circular(12.r),
+                  ),
+                  child: Icon(
+                    Icons.pause_circle_outline,
+                    color: const Color(0xFFF59E0B),
+                    size: 24.sp,
+                  ),
+                ),
+                SizedBox(width: 12.w),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        "Weekly Allowance: Inactive",
+                        style: TextStyle(
+                          fontSize: 18.sp,
+                          fontWeight: FontWeight.w800,
+                          color: const Color(0xFF2D3748),
+                          fontFamily: 'SF Pro Text',
+                        ),
+                      ),
+                      SizedBox(height: 4.h),
+                      Text(
+                        "Your weekly allowance is currently turned off.",
+                        style: TextStyle(
+                          fontSize: 14.sp,
+                          fontWeight: FontWeight.w500,
+                          color: const Color(0xFF718096),
+                          fontFamily: 'SF Pro Text',
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+          ],
+        ),
+      );
+    }
+
+    // Allowance exists and is enabled
+    return Container(
+      width: double.infinity,
+      padding: EdgeInsets.all(20.w),
+      decoration: BoxDecoration(
+        gradient: const LinearGradient(
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+          colors: [Color(0xFF10B981), Color(0xFF059669)],
+        ),
+        borderRadius: BorderRadius.circular(20.r),
+        boxShadow: [
+          BoxShadow(
+            color: const Color(0xFF10B981).withOpacity(0.3),
+            blurRadius: 20,
+            offset: const Offset(0, 8),
+            spreadRadius: 2,
+          ),
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Container(
+                padding: EdgeInsets.all(12.w),
+                decoration: BoxDecoration(
+                  color: Colors.white.withOpacity(0.2),
+                  borderRadius: BorderRadius.circular(12.r),
+                ),
+                child: Icon(
+                  Icons.account_balance_wallet,
+                  color: Colors.white,
+                  size: 24.sp,
+                ),
+              ),
+              SizedBox(width: 12.w),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      "Weekly Allowance: Active",
+                      style: TextStyle(
+                        fontSize: 18.sp,
+                        fontWeight: FontWeight.w800,
+                        color: Colors.white,
+                        fontFamily: 'SF Pro Text',
+                      ),
+                    ),
+                    SizedBox(height: 4.h),
+                    Text(
+                      "You will receive SAR ${allowance.weeklyAmount.toStringAsFixed(2)} every ${allowance.dayOfWeek}.",
+                      style: TextStyle(
+                        fontSize: 14.sp,
+                        fontWeight: FontWeight.w600,
+                        color: Colors.white.withOpacity(0.9),
+                        fontFamily: 'SF Pro Text',
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
           ),
         ],
       ),
