@@ -138,15 +138,24 @@ class _LeaderboardScreenState extends State<LeaderboardScreen> {
         return;
       }
 
-      // Calculate challenge completions for the week (matching parent leaderboard logic)
+      // Calculate challenge completions for the week (last 7 days from today)
       final now = DateTime.now();
-      var weekStart = now.subtract(Duration(days: now.weekday - 1));
-      weekStart = DateTime(weekStart.year, weekStart.month, weekStart.day);
+      final weekStart = DateTime(
+        now.year,
+        now.month,
+        now.day,
+      ).subtract(const Duration(days: 6));
+      final weekEnd = DateTime(
+        now.year,
+        now.month,
+        now.day,
+      ).add(const Duration(days: 1));
       final Map<String, List<QueryDocumentSnapshot<Map<String, dynamic>>>>
       childTasksMap = {};
       final Set<String> challengeNamesSet = {};
 
       // First, get ALL challenge tasks (completed and not completed) to populate dropdown
+      // For weekly view, only show challenges created in the current week
       final allChallengeQueries = children.map((child) async {
         final allTasksSnapshot = await FirebaseFirestore.instance
             .collection("Parents")
@@ -168,7 +177,19 @@ class _LeaderboardScreenState extends State<LeaderboardScreen> {
         for (final taskDoc in allTasks) {
           final taskName = taskDoc.data()['taskName'] as String? ?? '';
           if (taskName.isNotEmpty) {
-            challengeNamesSet.add(taskName);
+            // Only include challenges created in the current week
+            final createdAt =
+                (taskDoc.data()['createdAt'] as Timestamp?)?.toDate() ??
+                DateTime.now();
+            final isCreatedThisWeek =
+                createdAt.isAfter(
+                  weekStart.subtract(const Duration(seconds: 1)),
+                ) &&
+                createdAt.isBefore(weekEnd);
+
+            if (isCreatedThisWeek) {
+              challengeNamesSet.add(taskName);
+            }
           }
         }
       }
@@ -187,15 +208,46 @@ class _LeaderboardScreenState extends State<LeaderboardScreen> {
             .where('status', whereIn: ['pending', 'done'])
             .get();
 
+        final childName = '${child.firstName} ${child.lastName}'.trim();
+        print(
+          '🔍 [Weekly] Child $childName: Found ${completedTasksSnapshot.docs.length} challenge tasks with status pending/done',
+        );
+
         final filteredTasks = completedTasksSnapshot.docs.where((taskDoc) {
           final taskData = taskDoc.data();
+          final taskName = taskData['taskName'] as String? ?? 'Unknown';
+          final status = taskData['status'] as String? ?? 'Unknown';
+          final isChallenge = taskData['isChallenge'] as bool? ?? false;
           final completedDate = (taskData['completedDate'] as Timestamp?)
               ?.toDate();
-          return completedDate != null &&
+
+          print(
+            '   - Task: "$taskName", isChallenge: $isChallenge, status: $status, completedDate: $completedDate',
+          );
+
+          if (completedDate == null) {
+            print('     ❌ No completedDate - task will be excluded');
+            return false;
+          }
+
+          final isInWeek =
               completedDate.isAfter(
                 weekStart.subtract(const Duration(seconds: 1)),
-              );
+              ) &&
+              completedDate.isBefore(weekEnd);
+
+          if (!isInWeek) {
+            print(
+              '     ⚠️ completedDate $completedDate is outside week (weekStart: $weekStart)',
+            );
+          } else {
+            print('     ✅ Task is within week range');
+          }
+
+          return isInWeek;
         }).toList();
+
+        print('   ✓ Filtered to ${filteredTasks.length} tasks within week');
 
         return {'childId': child.id, 'tasks': filteredTasks};
       }).toList();
@@ -219,17 +271,86 @@ class _LeaderboardScreenState extends State<LeaderboardScreen> {
         );
       }
 
+      // If no challenge is selected, default to the last (most recent) challenge created this week
+      if (selectedChallenge == null && availableChallenges.isNotEmpty) {
+        // Get challenges sorted by creation date (most recent first)
+        final Map<String, DateTime> challengeDates = {};
+        for (final result in allChallengeResults) {
+          final allTasks =
+              result['allTasks']
+                  as List<QueryDocumentSnapshot<Map<String, dynamic>>>;
+          for (final taskDoc in allTasks) {
+            final taskName = taskDoc.data()['taskName'] as String? ?? '';
+            if (taskName.isNotEmpty && availableChallenges.contains(taskName)) {
+              final createdAt =
+                  (taskDoc.data()['createdAt'] as Timestamp?)?.toDate() ??
+                  DateTime.now();
+              // Only consider challenges created this week
+              final isCreatedThisWeek =
+                  createdAt.isAfter(
+                    weekStart.subtract(const Duration(seconds: 1)),
+                  ) &&
+                  createdAt.isBefore(weekEnd);
+
+              if (isCreatedThisWeek) {
+                if (!challengeDates.containsKey(taskName) ||
+                    createdAt.isAfter(challengeDates[taskName]!)) {
+                  challengeDates[taskName] = createdAt;
+                }
+              }
+            }
+          }
+        }
+
+        // Sort by creation date and get the most recent
+        final sortedChallenges = challengeDates.entries.toList()
+          ..sort((a, b) => b.value.compareTo(a.value));
+
+        if (sortedChallenges.isNotEmpty) {
+          selectedChallenge = sortedChallenges.first.key;
+          print(
+            '📊 [Weekly] No challenge selected - defaulting to last challenge: "$selectedChallenge"',
+          );
+        }
+      }
+
       final Map<String, Map<String, dynamic>> childDataMap = {};
 
       // Parallelize wallet and transaction queries
       final dataQueries = children.map((child) async {
         final tasksForChild = childTasksMap[child.id] ?? [];
+
+        // Debug: Log all tasks for this child when no challenge is selected
+        if (selectedChallenge == null) {
+          print(
+            '📊 [Weekly] No challenge selected - using ALL ${tasksForChild.length} tasks for child ${child.firstName}',
+          );
+          final challengeNamesInTasks = tasksForChild
+              .map((task) => (task.data()['taskName'] as String? ?? '').trim())
+              .where((name) => name.isNotEmpty)
+              .toSet();
+          print('📊 [Weekly] Challenges in tasks: $challengeNamesInTasks');
+        }
+
         final relevantTasks = selectedChallenge == null
             ? tasksForChild
             : tasksForChild.where((taskDoc) {
-                final taskName = taskDoc.data()['taskName'] as String? ?? '';
-                return taskName == selectedChallenge;
+                final taskName = (taskDoc.data()['taskName'] as String? ?? '')
+                    .trim();
+                final challengeMatch =
+                    taskName.toLowerCase() ==
+                    selectedChallenge!.toLowerCase().trim();
+                print(
+                  '🔍 [Weekly] Filtering task: "$taskName" vs selected: "$selectedChallenge" -> $challengeMatch',
+                );
+                return challengeMatch;
               }).toList();
+
+        if (selectedChallenge != null) {
+          print(
+            '🔍 [Weekly] Child ${child.firstName}: Found ${relevantTasks.length} tasks for challenge "$selectedChallenge" (this week only)',
+          );
+        }
 
         DateTime? earliestCompletion;
         final int completedCount = relevantTasks.length;
@@ -330,79 +451,65 @@ class _LeaderboardScreenState extends State<LeaderboardScreen> {
             }).toList()
           : childDataMap.entries.toList();
 
-      // Check if all children have no challenge completions
-      final allHaveNoChallenges = filteredEntries.every((entry) {
-        final count = entry.value['completedCount'] as int;
-        return count == 0;
-      });
+      // Primary: number of completed tasks (more = higher rank)
+      // Tiebreaker: earliest completion time (earlier = higher rank)
+      filteredEntries.sort((a, b) {
+        final aData = a.value;
+        final bData = b.value;
+        final aCount = aData['completedCount'] as int;
+        final bCount = bData['completedCount'] as int;
 
-      if (allHaveNoChallenges && filteredEntries.isNotEmpty) {
-        // Sort alphabetically when no challenges
-        filteredEntries.sort((a, b) {
-          final aName = (a.value['name'] as String).toLowerCase();
-          final bName = (b.value['name'] as String).toLowerCase();
-          return aName.compareTo(bName);
-        });
-      } else {
-        // Normal sorting when there are challenges
-        // Primary: number of completed tasks (more = higher rank)
-        // Tiebreaker: earliest completion time (earlier = higher rank)
-        filteredEntries.sort((a, b) {
-          final aData = a.value;
-          final bData = b.value;
-          final aCount = aData['completedCount'] as int;
-          final bCount = bData['completedCount'] as int;
+        // First priority: number of completed tasks (more = higher rank)
+        if (aCount != bCount) {
+          return bCount.compareTo(
+            aCount,
+          ); // Descending: more tasks = higher rank
+        }
 
-          // First priority: number of completed tasks (more = higher rank)
-          if (aCount != bCount) {
-            return bCount.compareTo(aCount); // Descending: more tasks = higher rank
-          }
-
-          // Second priority (tiebreaker): earliest completion date (earlier = higher rank)
-          // Only compare dates if both have completions
-          if (aCount > 0 && bCount > 0) {
-            final aDate = aData['earliestCompletion'] as DateTime?;
-            final bDate = bData['earliestCompletion'] as DateTime?;
-            if (aDate != null && bDate != null) {
-              final dateComparison = aDate.compareTo(bDate);
-              if (dateComparison != 0) {
-                return dateComparison; // Ascending: earlier date = higher rank
-              }
-            } else if (aDate != null && bDate == null) {
-              return -1; // a has date, b doesn't - a comes first
-            } else if (aDate == null && bDate != null) {
-              return 1; // b has date, a doesn't - b comes first
+        // Second priority (tiebreaker): earliest completion date (earlier = higher rank)
+        // Only compare dates if both have completions
+        if (aCount > 0 && bCount > 0) {
+          final aDate = aData['earliestCompletion'] as DateTime?;
+          final bDate = bData['earliestCompletion'] as DateTime?;
+          if (aDate != null && bDate != null) {
+            final dateComparison = aDate.compareTo(bDate);
+            if (dateComparison != 0) {
+              return dateComparison; // Ascending: earlier date = higher rank
             }
+          } else if (aDate != null && bDate == null) {
+            return -1; // a has date, b doesn't - a comes first
+          } else if (aDate == null && bDate != null) {
+            return 1; // b has date, a doesn't - b comes first
           }
+        }
 
-          // Third priority: children with completions rank above those without
-          if (aCount > 0 && bCount == 0) {
-            return -1; // a has completions, b doesn't - a comes first
-          }
-          if (aCount == 0 && bCount > 0) {
-            return 1; // b has completions, a doesn't - b comes first
-          }
+        // Third priority: children with completions rank above those without
+        if (aCount > 0 && bCount == 0) {
+          return -1; // a has completions, b doesn't - a comes first
+        }
+        if (aCount == 0 && bCount > 0) {
+          return 1; // b has completions, a doesn't - b comes first
+        }
 
-          // Fourth priority: points
-          final aPoints = aData['points'] as int;
-          final bPoints = bData['points'] as int;
-          if (aPoints != bPoints) {
-            return bPoints.compareTo(aPoints);
-          }
+        // Fourth priority: points
+        final aPoints = aData['points'] as int;
+        final bPoints = bData['points'] as int;
+        if (aPoints != bPoints) {
+          return bPoints.compareTo(aPoints);
+        }
 
-          // Fifth priority: level
-          final aLevel = aData['currentLevel'] as int;
-          final bLevel = bData['currentLevel'] as int;
-          if (aLevel != bLevel) {
-            return bLevel.compareTo(aLevel);
-          }
+        // Fifth priority: level
+        final aLevel = aData['currentLevel'] as int;
+        final bLevel = bData['currentLevel'] as int;
+        if (aLevel != bLevel) {
+          return bLevel.compareTo(aLevel);
+        }
 
-          // Sixth priority: name (alphabetical)
-          final aName = (aData['name'] as String).toLowerCase();
-          final bName = (bData['name'] as String).toLowerCase();
-          return aName.compareTo(bName);
-        });
-      }
+        // Sixth priority: name (alphabetical)
+        final aName = (aData['name'] as String).toLowerCase();
+        final bName = (bData['name'] as String).toLowerCase();
+        return aName.compareTo(bName);
+      });
 
       final List<LeaderboardEntry> entries = [];
       // Start ranking from 1 (even when no challenges)
@@ -422,6 +529,9 @@ class _LeaderboardScreenState extends State<LeaderboardScreen> {
             progressToNextLevel: data['progress'] as double,
             recentPurchases: data['recentPurchases'] as List<RecentPurchase>,
             rank: i + 1,
+            challengeCompletions: data['completedCount'] as int,
+            earliestChallengeCompletion:
+                data['earliestCompletion'] as DateTime?,
           ),
         );
       }
@@ -447,9 +557,13 @@ class _LeaderboardScreenState extends State<LeaderboardScreen> {
         setState(() {
           _weeklyLeaderboardData = entries;
           _availableChallenges = availableChallenges;
-          _selectedChallenge = selectedChallenge;
+          // Explicitly set to null if no challenge is selected
+          _selectedChallenge = selectedChallenge ?? null;
           _isLoadingWeekly = false;
         });
+        print(
+          '📊 [Weekly] Final state - _selectedChallenge: $_selectedChallenge, entries count: ${entries.length}',
+        );
       }
     } catch (e) {
       print('❌ Error loading weekly leaderboard data: $e');
@@ -608,16 +722,46 @@ class _LeaderboardScreenState extends State<LeaderboardScreen> {
             .where('status', whereIn: ['pending', 'done'])
             .get();
 
+        final childName = '${child.firstName} ${child.lastName}'.trim();
+        print(
+          '🔍 [Monthly] Child $childName: Found ${completedTasksSnapshot.docs.length} challenge tasks with status pending/done',
+        );
+
         final filteredTasks = completedTasksSnapshot.docs.where((taskDoc) {
           final taskData = taskDoc.data();
+          final taskName = taskData['taskName'] as String? ?? 'Unknown';
+          final status = taskData['status'] as String? ?? 'Unknown';
+          final isChallenge = taskData['isChallenge'] as bool? ?? false;
           final completedDate = (taskData['completedDate'] as Timestamp?)
               ?.toDate();
-          return completedDate != null &&
+
+          print(
+            '   - Task: "$taskName", isChallenge: $isChallenge, status: $status, completedDate: $completedDate',
+          );
+
+          if (completedDate == null) {
+            print('     ❌ No completedDate - task will be excluded');
+            return false;
+          }
+
+          final isInMonth =
               completedDate.isAfter(
                 monthStart.subtract(const Duration(seconds: 1)),
               ) &&
               completedDate.isBefore(monthEnd.add(const Duration(seconds: 1)));
+
+          if (!isInMonth) {
+            print(
+              '     ⚠️ completedDate $completedDate is outside month (monthStart: $monthStart, monthEnd: $monthEnd)',
+            );
+          } else {
+            print('     ✅ Task is within month range');
+          }
+
+          return isInMonth;
         }).toList();
+
+        print('   ✓ Filtered to ${filteredTasks.length} tasks within month');
 
         return {'childId': child.id, 'tasks': filteredTasks};
       }).toList();
@@ -641,6 +785,51 @@ class _LeaderboardScreenState extends State<LeaderboardScreen> {
         );
       }
 
+      // If no challenge is selected, default to the last (most recent) challenge created in the selected month
+      if (selectedMonthlyChallenge == null &&
+          availableMonthlyChallenges.isNotEmpty) {
+        // Get challenges sorted by creation date (most recent first)
+        final Map<String, DateTime> challengeDates = {};
+        for (final result in allMonthlyChallengeResults) {
+          final allTasks =
+              result['allTasks']
+                  as List<QueryDocumentSnapshot<Map<String, dynamic>>>;
+          for (final taskDoc in allTasks) {
+            final taskName = taskDoc.data()['taskName'] as String? ?? '';
+            if (taskName.isNotEmpty &&
+                availableMonthlyChallenges.contains(taskName)) {
+              final createdAt =
+                  (taskDoc.data()['createdAt'] as Timestamp?)?.toDate() ??
+                  DateTime.now();
+              // Only consider challenges created in the selected month
+              final isCreatedInMonth =
+                  createdAt.isAfter(
+                    monthStart.subtract(const Duration(seconds: 1)),
+                  ) &&
+                  createdAt.isBefore(monthEnd.add(const Duration(seconds: 1)));
+
+              if (isCreatedInMonth) {
+                if (!challengeDates.containsKey(taskName) ||
+                    createdAt.isAfter(challengeDates[taskName]!)) {
+                  challengeDates[taskName] = createdAt;
+                }
+              }
+            }
+          }
+        }
+
+        // Sort by creation date and get the most recent
+        final sortedChallenges = challengeDates.entries.toList()
+          ..sort((a, b) => b.value.compareTo(a.value));
+
+        if (sortedChallenges.isNotEmpty) {
+          selectedMonthlyChallenge = sortedChallenges.first.key;
+          print(
+            '📊 [Monthly] No challenge selected - defaulting to last challenge: "$selectedMonthlyChallenge"',
+          );
+        }
+      }
+
       final Map<String, Map<String, dynamic>> childDataMap = {};
 
       // Parallelize wallet and transaction queries
@@ -649,9 +838,22 @@ class _LeaderboardScreenState extends State<LeaderboardScreen> {
         final relevantTasks = selectedMonthlyChallenge == null
             ? tasksForChild
             : tasksForChild.where((taskDoc) {
-                final taskName = taskDoc.data()['taskName'] as String? ?? '';
-                return taskName == selectedMonthlyChallenge;
+                final taskName = (taskDoc.data()['taskName'] as String? ?? '')
+                    .trim();
+                final challengeMatch =
+                    taskName.toLowerCase() ==
+                    selectedMonthlyChallenge!.toLowerCase().trim();
+                print(
+                  '🔍 [Monthly] Filtering task: "$taskName" vs selected: "$selectedMonthlyChallenge" -> $challengeMatch',
+                );
+                return challengeMatch;
               }).toList();
+
+        if (selectedMonthlyChallenge != null) {
+          print(
+            '🔍 [Monthly] Child ${child.firstName}: Found ${relevantTasks.length} tasks for challenge "$selectedMonthlyChallenge"',
+          );
+        }
 
         DateTime? earliestCompletion;
         final int completedCount = relevantTasks.length;
@@ -762,7 +964,9 @@ class _LeaderboardScreenState extends State<LeaderboardScreen> {
 
         // First priority: number of completed tasks (more = higher rank)
         if (aCount != bCount) {
-          return bCount.compareTo(aCount); // Descending: more tasks = higher rank
+          return bCount.compareTo(
+            aCount,
+          ); // Descending: more tasks = higher rank
         }
 
         // Second priority (tiebreaker): earliest completion date (earlier = higher rank)
@@ -827,6 +1031,9 @@ class _LeaderboardScreenState extends State<LeaderboardScreen> {
             progressToNextLevel: data['progress'] as double,
             recentPurchases: data['recentPurchases'] as List<RecentPurchase>,
             rank: i + 1,
+            challengeCompletions: data['completedCount'] as int,
+            earliestChallengeCompletion:
+                data['earliestCompletion'] as DateTime?,
           ),
         );
       }
@@ -1080,10 +1287,8 @@ class _LeaderboardScreenState extends State<LeaderboardScreen> {
   }
 
   Widget _buildUserRankBanner(LeaderboardEntry entry) {
-    final totalPlayers = _leaderboardData.length;
-    final percentage = totalPlayers > 0
-        ? ((totalPlayers - entry.rank + 1) / totalPlayers * 100).round()
-        : 0;
+    // Generate personalized motivational message
+    String motivationalMessage = _getMotivationalMessage(entry);
 
     return Padding(
       padding: EdgeInsets.symmetric(horizontal: 20.w),
@@ -1117,7 +1322,7 @@ class _LeaderboardScreenState extends State<LeaderboardScreen> {
             SizedBox(width: 16.w),
             Expanded(
               child: Text(
-                'You are doing better than $percentage% of other players!',
+                motivationalMessage,
                 style: TextStyle(
                   fontSize: 16.sp,
                   fontWeight: FontWeight.w600,
@@ -1130,6 +1335,29 @@ class _LeaderboardScreenState extends State<LeaderboardScreen> {
         ),
       ),
     );
+  }
+
+  String _getMotivationalMessage(LeaderboardEntry entry) {
+    final totalPlayers = _leaderboardData.length;
+    final period = _isWeekly ? "this week" : "this month";
+
+    // Messages based on rank with time-based context
+    if (entry.rank == 1) {
+      return "You're leading $period! Amazing work, keep it up!";
+    } else if (entry.rank == 2) {
+      return "You're doing great $period! So close to the top, keep going!";
+    } else if (entry.rank == 3) {
+      return "You're in the top 3 $period! Great job, keep pushing forward!";
+    } else if (entry.rank <= totalPlayers * 0.3) {
+      // Top 30%
+      return "You're doing better $period! Keep saving to climb even higher!";
+    } else if (entry.rank <= totalPlayers * 0.6) {
+      // Middle 30%
+      return "You're making progress $period! Every save counts, keep going!";
+    } else {
+      // Bottom 40%
+      return "You're on the right track $period! Keep saving and you'll rise up!";
+    }
   }
 
   Widget _buildPodium(List<LeaderboardEntry> topThree) {
@@ -1197,24 +1425,28 @@ class _LeaderboardScreenState extends State<LeaderboardScreen> {
                         overflow: TextOverflow.ellipsis,
                       ),
                       SizedBox(height: 4.h),
-                      Container(
-                        padding: EdgeInsets.symmetric(
-                          horizontal: 8.w,
-                          vertical: 4.h,
-                        ),
-                        decoration: BoxDecoration(
-                          color: const Color(0xFF643FDB),
-                          borderRadius: BorderRadius.circular(12.r),
-                        ),
-                        child: Text(
-                          '${second.points} QP',
-                          style: TextStyle(
-                            fontSize: 12.sp,
-                            fontWeight: FontWeight.w600,
-                            color: Colors.white,
-                            fontFamily: 'SPProText',
+                      Column(
+                        children: [
+                          Container(
+                            padding: EdgeInsets.symmetric(
+                              horizontal: 8.w,
+                              vertical: 4.h,
+                            ),
+                            decoration: BoxDecoration(
+                              color: const Color(0xFF643FDB),
+                              borderRadius: BorderRadius.circular(12.r),
+                            ),
+                            child: Text(
+                              '${second.points} points',
+                              style: TextStyle(
+                                fontSize: 12.sp,
+                                fontWeight: FontWeight.w600,
+                                color: Colors.white,
+                                fontFamily: 'SPProText',
+                              ),
+                            ),
                           ),
-                        ),
+                        ],
                       ),
                     ],
                   ),
@@ -1268,24 +1500,28 @@ class _LeaderboardScreenState extends State<LeaderboardScreen> {
                         overflow: TextOverflow.ellipsis,
                       ),
                       SizedBox(height: 4.h),
-                      Container(
-                        padding: EdgeInsets.symmetric(
-                          horizontal: 8.w,
-                          vertical: 4.h,
-                        ),
-                        decoration: BoxDecoration(
-                          color: const Color(0xFF643FDB),
-                          borderRadius: BorderRadius.circular(12.r),
-                        ),
-                        child: Text(
-                          '${first.points} QP',
-                          style: TextStyle(
-                            fontSize: 12.sp,
-                            fontWeight: FontWeight.w600,
-                            color: Colors.white,
-                            fontFamily: 'SPProText',
+                      Column(
+                        children: [
+                          Container(
+                            padding: EdgeInsets.symmetric(
+                              horizontal: 8.w,
+                              vertical: 4.h,
+                            ),
+                            decoration: BoxDecoration(
+                              color: const Color(0xFF643FDB),
+                              borderRadius: BorderRadius.circular(12.r),
+                            ),
+                            child: Text(
+                              '${first.points} points',
+                              style: TextStyle(
+                                fontSize: 12.sp,
+                                fontWeight: FontWeight.w600,
+                                color: Colors.white,
+                                fontFamily: 'SPProText',
+                              ),
+                            ),
                           ),
-                        ),
+                        ],
                       ),
                     ],
                   ),
@@ -1343,24 +1579,28 @@ class _LeaderboardScreenState extends State<LeaderboardScreen> {
                         overflow: TextOverflow.ellipsis,
                       ),
                       SizedBox(height: 4.h),
-                      Container(
-                        padding: EdgeInsets.symmetric(
-                          horizontal: 8.w,
-                          vertical: 4.h,
-                        ),
-                        decoration: BoxDecoration(
-                          color: const Color(0xFF643FDB),
-                          borderRadius: BorderRadius.circular(12.r),
-                        ),
-                        child: Text(
-                          '${third.points} QP',
-                          style: TextStyle(
-                            fontSize: 12.sp,
-                            fontWeight: FontWeight.w600,
-                            color: Colors.white,
-                            fontFamily: 'SPProText',
+                      Column(
+                        children: [
+                          Container(
+                            padding: EdgeInsets.symmetric(
+                              horizontal: 8.w,
+                              vertical: 4.h,
+                            ),
+                            decoration: BoxDecoration(
+                              color: const Color(0xFF643FDB),
+                              borderRadius: BorderRadius.circular(12.r),
+                            ),
+                            child: Text(
+                              '${third.points} points',
+                              style: TextStyle(
+                                fontSize: 12.sp,
+                                fontWeight: FontWeight.w600,
+                                color: Colors.white,
+                                fontFamily: 'SPProText',
+                              ),
+                            ),
                           ),
-                        ),
+                        ],
                       ),
                     ],
                   ),
@@ -1640,13 +1880,29 @@ class _LeaderboardScreenState extends State<LeaderboardScreen> {
             overflow: TextOverflow.ellipsis,
           ),
         ),
-        Text(
-          '${entry.points} points',
-          style: TextStyle(
-            fontSize: 14.sp,
-            color: const Color(0xFF6B7280),
-            fontFamily: 'SPProText',
-          ),
+        Column(
+          crossAxisAlignment: CrossAxisAlignment.end,
+          children: [
+            Text(
+              '${entry.points} points',
+              style: TextStyle(
+                fontSize: 14.sp,
+                color: const Color(0xFF6B7280),
+                fontFamily: 'SPProText',
+              ),
+            ),
+            if (entry.challengeCompletions > 0) ...[
+              SizedBox(height: 2.h),
+              Text(
+                '${entry.challengeCompletions} challenge${entry.challengeCompletions == 1 ? '' : 's'}',
+                style: TextStyle(
+                  fontSize: 12.sp,
+                  color: const Color(0xFF643FDB),
+                  fontFamily: 'SPProText',
+                ),
+              ),
+            ],
+          ],
         ),
       ],
     );

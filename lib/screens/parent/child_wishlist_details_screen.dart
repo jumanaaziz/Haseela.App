@@ -6,6 +6,7 @@ import '../../models/wishlist_item.dart';
 import '../../models/wallet.dart';
 import '../services/wishlist_service.dart';
 import '../services/firebase_service.dart';
+import '../services/badge_service.dart';
 
 class ChildWishlistDetailsScreen extends StatefulWidget {
   final String parentId;
@@ -1138,6 +1139,13 @@ class _ChildWishlistDetailsScreenState extends State<ChildWishlistDetailsScreen>
         widget.childId,
         item.id,
       );
+
+      // Check badges after wishlist item purchase
+      await BadgeService.checkWishlistFulfillment(
+        widget.parentId,
+        widget.childId,
+      );
+      await BadgeService.checkAllBadges(widget.parentId, widget.childId);
 
       if (mounted) {
         toastification.show(
