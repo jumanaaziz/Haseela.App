@@ -389,165 +389,210 @@ class _MyBadgeViewState extends State<MyBadgeView> {
         final rank = progressData['rank'] as int? ?? 0;
         final totalPlayers = progressData['totalPlayers'] as int? ?? 0;
 
-        return Container(
-          decoration: BoxDecoration(
-            color: Colors.white,
-            borderRadius: BorderRadius.circular(16.r),
-            border: Border.all(
-              color: badge.isUnlocked
-                  ? const Color(0xFFFFD700)
-                  : Colors.grey[300]!,
-              width: badge.isUnlocked ? 2.w : 1.w,
+        return GestureDetector(
+          onTap: () {
+            _showBadgeExplanation(badge);
+          },
+          child: Container(
+            decoration: BoxDecoration(
+              color: Colors.white,
+              borderRadius: BorderRadius.circular(16.r),
+              border: Border.all(
+                color: badge.isUnlocked
+                    ? const Color(0xFFFFD700)
+                    : Colors.grey[300]!,
+                width: badge.isUnlocked ? 2.w : 1.w,
+              ),
+              boxShadow: [
+                BoxShadow(
+                  color: Colors.black.withOpacity(0.05),
+                  blurRadius: 8.r,
+                  offset: Offset(0, 2.h),
+                ),
+              ],
             ),
-            boxShadow: [
-              BoxShadow(
-                color: Colors.black.withOpacity(0.05),
-                blurRadius: 8.r,
-                offset: Offset(0, 2.h),
-              ),
-            ],
-          ),
-          child: Column(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              // Badge Image
-              Container(
-                width: 70.w,
-                height: 70.w,
-                decoration: BoxDecoration(
-                  color: badge.isUnlocked
-                      ? Colors.transparent
-                      : Colors.grey[200]!.withOpacity(0.5),
-                  borderRadius: BorderRadius.circular(12.r),
-                ),
-                child: badge.imageAsset.isEmpty
-                    ? _buildDefaultBadgeIcon(badge.isUnlocked)
-                    : badge.isUnlocked
-                    ? ClipRRect(
-                        borderRadius: BorderRadius.circular(12.r),
-                        child: Image.asset(
-                          badge.imageAsset,
-                          width: 70.w,
-                          height: 70.w,
-                          fit: BoxFit.contain,
-                          errorBuilder: (context, error, stackTrace) {
-                            print(
-                              '❌ Error loading badge image: ${badge.imageAsset}',
-                            );
-                            print('❌ Error details: $error');
-                            print('❌ Stack trace: $stackTrace');
-                            return _buildDefaultBadgeIcon(true);
-                          },
-                        ),
-                      )
-                    : Stack(
-                        children: [
-                          ClipRRect(
-                            borderRadius: BorderRadius.circular(12.r),
-                            child: Image.asset(
-                              badge.imageAsset,
-                              width: 70.w,
-                              height: 70.w,
-                              fit: BoxFit.contain,
-                              color: Colors.grey[400],
-                              colorBlendMode: BlendMode.saturation,
-                              errorBuilder: (context, error, stackTrace) {
-                                return _buildDefaultBadgeIcon(false);
-                              },
-                            ),
-                          ),
-                          Positioned.fill(
-                            child: Container(
-                              decoration: BoxDecoration(
-                                color: Colors.black.withOpacity(0.5),
-                                borderRadius: BorderRadius.circular(12.r),
-                              ),
-                              child: Icon(
-                                Icons.lock,
-                                size: 24.sp,
-                                color: Colors.white,
-                              ),
-                            ),
-                          ),
-                        ],
-                      ),
-              ),
-              SizedBox(height: 6.h),
-
-              // Badge Name
-              Padding(
-                padding: EdgeInsets.symmetric(horizontal: 4.w),
-                child: Text(
-                  badge.name,
-                  textAlign: TextAlign.center,
-                  maxLines: 2,
-                  overflow: TextOverflow.ellipsis,
-                  style: TextStyle(
-                    fontSize: 10.sp,
-                    fontWeight: FontWeight.w600,
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                // Badge Image
+                Container(
+                  width: 70.w,
+                  height: 70.w,
+                  decoration: BoxDecoration(
                     color: badge.isUnlocked
-                        ? const Color(0xFF1C1243)
-                        : Colors.grey[500],
-                    fontFamily: 'SPProText',
+                        ? Colors.transparent
+                        : Colors.grey[200]!.withOpacity(0.5),
+                    borderRadius: BorderRadius.circular(12.r),
                   ),
-                ),
-              ),
-              SizedBox(height: 6.h),
-
-              // Progress Bar (only show if not unlocked)
-              if (!badge.isUnlocked) ...[
-                Padding(
-                  padding: EdgeInsets.symmetric(horizontal: 6.w),
-                  child: Column(
-                    children: [
-                      // Progress text
-                      Text(
-                        isRankBased
-                            ? 'Rank: $rank/$totalPlayers'
-                            : '${current.toInt()}/${target.toInt()}',
-                        style: TextStyle(
-                          fontSize: 9.sp,
-                          color: Colors.grey[600],
-                          fontFamily: 'SPProText',
-                          fontWeight: FontWeight.w500,
-                        ),
-                      ),
-                      SizedBox(height: 4.h),
-                      // Progress bar
-                      ClipRRect(
-                        borderRadius: BorderRadius.circular(4.r),
-                        child: LinearProgressIndicator(
-                          value: progress,
-                          minHeight: 4.h,
-                          backgroundColor: Colors.grey[200],
-                          valueColor: AlwaysStoppedAnimation<Color>(
-                            const Color(0xFF643FDB),
+                  child: badge.imageAsset.isEmpty
+                      ? _buildDefaultBadgeIcon(badge.isUnlocked)
+                      : badge.isUnlocked
+                      ? ClipRRect(
+                          borderRadius: BorderRadius.circular(12.r),
+                          child: Image.asset(
+                            badge.imageAsset,
+                            width: 70.w,
+                            height: 70.w,
+                            fit: BoxFit.contain,
+                            errorBuilder: (context, error, stackTrace) {
+                              print(
+                                '❌ Error loading badge image: ${badge.imageAsset}',
+                              );
+                              print('❌ Error details: $error');
+                              print('❌ Stack trace: $stackTrace');
+                              return _buildDefaultBadgeIcon(true);
+                            },
                           ),
+                        )
+                      : Stack(
+                          children: [
+                            ClipRRect(
+                              borderRadius: BorderRadius.circular(12.r),
+                              child: Image.asset(
+                                badge.imageAsset,
+                                width: 70.w,
+                                height: 70.w,
+                                fit: BoxFit.contain,
+                                color: Colors.grey[400],
+                                colorBlendMode: BlendMode.saturation,
+                                errorBuilder: (context, error, stackTrace) {
+                                  return _buildDefaultBadgeIcon(false);
+                                },
+                              ),
+                            ),
+                            Positioned.fill(
+                              child: Container(
+                                decoration: BoxDecoration(
+                                  color: Colors.black.withOpacity(0.5),
+                                  borderRadius: BorderRadius.circular(12.r),
+                                ),
+                                child: Icon(
+                                  Icons.lock,
+                                  size: 24.sp,
+                                  color: Colors.white,
+                                ),
+                              ),
+                            ),
+                          ],
                         ),
-                      ),
-                    ],
-                  ),
                 ),
-              ] else ...[
-                // Show "Unlocked" text if badge is unlocked
+                SizedBox(height: 6.h),
+
+                // Badge Name
                 Padding(
                   padding: EdgeInsets.symmetric(horizontal: 4.w),
                   child: Text(
-                    'Unlocked!',
+                    badge.name,
+                    textAlign: TextAlign.center,
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
                     style: TextStyle(
-                      fontSize: 9.sp,
-                      color: const Color(0xFF47C272),
-                      fontFamily: 'SPProText',
+                      fontSize: 10.sp,
                       fontWeight: FontWeight.w600,
+                      color: badge.isUnlocked
+                          ? const Color(0xFF1C1243)
+                          : Colors.grey[500],
+                      fontFamily: 'SPProText',
                     ),
                   ),
                 ),
+                SizedBox(height: 6.h),
+
+                // Progress Bar (only show if not unlocked)
+                if (!badge.isUnlocked) ...[
+                  Padding(
+                    padding: EdgeInsets.symmetric(horizontal: 6.w),
+                    child: Column(
+                      children: [
+                        // Progress text
+                        Text(
+                          isRankBased
+                              ? 'Rank: $rank/$totalPlayers'
+                              : '${current.toInt()}/${target.toInt()}',
+                          style: TextStyle(
+                            fontSize: 9.sp,
+                            color: Colors.grey[600],
+                            fontFamily: 'SPProText',
+                            fontWeight: FontWeight.w500,
+                          ),
+                        ),
+                        SizedBox(height: 4.h),
+                        // Progress bar
+                        ClipRRect(
+                          borderRadius: BorderRadius.circular(4.r),
+                          child: LinearProgressIndicator(
+                            value: progress,
+                            minHeight: 4.h,
+                            backgroundColor: Colors.grey[200],
+                            valueColor: AlwaysStoppedAnimation<Color>(
+                              const Color(0xFF643FDB),
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ] else ...[
+                  // Show "Unlocked" text if badge is unlocked
+                  Padding(
+                    padding: EdgeInsets.symmetric(horizontal: 4.w),
+                    child: Text(
+                      'Unlocked!',
+                      style: TextStyle(
+                        fontSize: 9.sp,
+                        color: const Color(0xFF47C272),
+                        fontFamily: 'SPProText',
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                  ),
+                ],
               ],
-            ],
+            ),
           ),
         );
       },
     );
+  }
+
+  void _showBadgeExplanation(badge_model.Badge badge) {
+    final explanation = _getBadgeExplanation(badge.type);
+
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(
+          explanation,
+          style: TextStyle(
+            fontSize: 14.sp,
+            fontWeight: FontWeight.w500,
+            color: Colors.white,
+            fontFamily: 'SPProText',
+          ),
+        ),
+        backgroundColor: const Color(0xFF643FDB),
+        duration: const Duration(seconds: 4),
+        behavior: SnackBarBehavior.floating,
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(12.r),
+        ),
+        margin: EdgeInsets.all(16.w),
+      ),
+    );
+  }
+
+  String _getBadgeExplanation(badge_model.BadgeType badgeType) {
+    switch (badgeType) {
+      case badge_model.BadgeType.tenaciousTaskmaster:
+        return 'Complete 10 tasks to unlock this badge! Keep completing tasks and you\'ll earn it.';
+      case badge_model.BadgeType.financialFreedomFlyer:
+        return 'Save 100 SAR to unlock this badge! Keep saving money in your savings wallet.';
+      case badge_model.BadgeType.conquerorsCrown:
+        return 'Win first place in a weekly challenge to unlock this badge! Complete challenge tasks faster than your siblings.';
+      case badge_model.BadgeType.highPriorityHero:
+        return 'Complete 4 high-priority tasks to unlock this badge! Focus on tasks marked as high priority.';
+      case badge_model.BadgeType.wishlistFulfillment:
+        return 'Purchase 5 items from your wishlist to unlock this badge! Save up and buy items you want.';
+    }
   }
 
   Color _getBadgeColor(int level) {
