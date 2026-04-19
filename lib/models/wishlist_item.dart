@@ -33,7 +33,7 @@ class WishlistItem {
     double price = (data['price'] ?? data['itemPrice'] ?? 0.0).toDouble();
     String description = data['description'] ?? '';
     bool isCompleted =
-        data['isCompleted'] ?? (data['statuss'] == 'completed') ?? false;
+        data['isCompleted'] ?? (data['status'] == 'completed') ?? false;
     bool isPurchased = data['isPurchased'] ?? false;
     bool purchaseDeducted = data['purchaseDeducted'] ?? false;
     String category =

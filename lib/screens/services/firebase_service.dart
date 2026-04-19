@@ -16,6 +16,21 @@ class FirebaseService {
   static const String _childrenSubcollection = 'Children';
   static const String _walletSubcollection = 'Wallet';
   static const String _transactionsSubcollection = 'Transactions';
+  static const String _defaultChildWalletDocId = 'wallet001';
+
+  /// Firestore path: Parents/{parentId}/Children/{childId}/Wallet/wallet001
+  static DocumentReference<Map<String, dynamic>> _childWalletDocument(
+    String parentId,
+    String childId,
+  ) {
+    return _firestore
+        .collection(_parentsCollection)
+        .doc(parentId)
+        .collection(_childrenSubcollection)
+        .doc(childId)
+        .collection(_walletSubcollection)
+        .doc(_defaultChildWalletDocId);
+  }
 
   // User Profile Methods
   static Future<UserProfile?> getUserProfile(String userId) async {
@@ -99,14 +114,7 @@ class FirebaseService {
     try {
       print('Getting wallet for parent: $parentId, child: $childId');
 
-      final doc = await _firestore
-          .collection(_parentsCollection)
-          .doc(parentId)
-          .collection(_childrenSubcollection)
-          .doc(childId)
-          .collection(_walletSubcollection)
-          .doc('wallet001')
-          .get();
+      final doc = await _childWalletDocument(parentId, childId).get();
 
       print('Document exists: ${doc.exists}');
       if (doc.exists) {
@@ -129,14 +137,7 @@ class FirebaseService {
       print('Creating wallet for parent: $parentId, child: $childId');
       print('Wallet data: ${wallet.toMap()}');
 
-      await _firestore
-          .collection(_parentsCollection)
-          .doc(parentId)
-          .collection(_childrenSubcollection)
-          .doc(childId)
-          .collection(_walletSubcollection)
-          .doc('wallet001')
-          .set(wallet.toMap());
+      await _childWalletDocument(parentId, childId).set(wallet.toMap());
 
       print('Wallet created successfully');
       return true;
@@ -173,14 +174,7 @@ class FirebaseService {
             savingGoal; // Updated to match your database field name
       }
 
-      await _firestore
-          .collection(_parentsCollection)
-          .doc(parentId)
-          .collection(_childrenSubcollection)
-          .doc(childId)
-          .collection(_walletSubcollection)
-          .doc('wallet001')
-          .update(updateData);
+      await _childWalletDocument(parentId, childId).update(updateData);
 
       return true;
     } catch (e) {
@@ -196,14 +190,7 @@ class FirebaseService {
   ) async {
     try {
       final updatedWallet = wallet.copyWith(updatedAt: DateTime.now());
-      await _firestore
-          .collection(_parentsCollection)
-          .doc(parentId)
-          .collection(_childrenSubcollection)
-          .doc(childId)
-          .collection(_walletSubcollection)
-          .doc('wallet001')
-          .update(updatedWallet.toMap());
+      await _childWalletDocument(parentId, childId).update(updatedWallet.toMap());
       return true;
     } catch (e) {
       print('Error updating child wallet: $e');
@@ -224,13 +211,7 @@ class FirebaseService {
   }
 
   static Stream<Wallet?> getChildWalletStream(String parentId, String childId) {
-    return _firestore
-        .collection(_parentsCollection)
-        .doc(parentId)
-        .collection(_childrenSubcollection)
-        .doc(childId)
-        .collection(_walletSubcollection)
-        .doc('wallet001')
+    return _childWalletDocument(parentId, childId)
         .snapshots()
         .map((doc) {
           if (doc.exists) {
@@ -535,7 +516,7 @@ class FirebaseService {
     try {
       // Create default wallet for child with zero balances
       final wallet = Wallet(
-        id: 'wallet001',
+        id: _defaultChildWalletDocId,
         userId: childId,
         totalBalance: 0.0,
         spendingBalance: 0.0,
