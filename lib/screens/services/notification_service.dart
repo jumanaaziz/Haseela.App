@@ -4,291 +4,13 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 
-class NotificationService {
-  NotificationService._internal();
-  static final NotificationService _instance = NotificationService._internal();
-  factory NotificationService() => _instance;
-
+abstract class BaseNotificationService {
   final FirebaseMessaging _messaging = FirebaseMessaging.instance;
   final FlutterLocalNotificationsPlugin _localNotifications =
       FlutterLocalNotificationsPlugin();
 
-  StreamSubscription<QuerySnapshot>? _tasksSubscription;
-  StreamSubscription<QuerySnapshot>?
-  _parentTasksSubscription; // For parent notifications
-  StreamSubscription<QuerySnapshot>?
-  _parentChildrenSubscription; // For listening to children list
   StreamSubscription<RemoteMessage>? _fcmForegroundSubscription;
   StreamSubscription<String>? _tokenRefreshSubscription;
-  String? _lastNotifiedTaskId;
-  String? _lastNotifiedParentTaskId; // Track last notified task for parent
-  final Map<String, String> _taskStatusCache = {}; // taskId -> previous status
-  final Map<String, String> _parentTaskStatusCache =
-      {}; // taskId -> previous status for parent
-  final Map<String, StreamSubscription<QuerySnapshot>> _childTaskSubscriptions =
-      {}; // childId -> subscription
-  final Map<String, StreamSubscription<QuerySnapshot>>
-  _childWishlistSubscriptions = {}; // childId -> wishlist subscription
-  final Map<String, bool> _wishlistItemCompletionCache =
-      {}; // wishlistItemId -> isCompleted status
-  final Set<String> _notifiedNewTasks =
-      {}; // Track which new tasks have been notified
-  bool _cacheInitialized = false; // Track if cache has been initialized
-  bool _parentCacheInitialized =
-      false; // Track if parent cache has been initialized
-  bool _firstSnapshotReceived =
-      false; // Track if first snapshot from listener has been received
-
-  Future<void> initializeForChild({
-    required String parentId,
-    required String childId,
-  }) async {
-    // ignore: avoid_print
-    print('🚀 ===== NOTIFICATION SERVICE INIT START =====');
-    // ignore: avoid_print
-    print(
-      '🚀 Initializing notifications for child: $childId (parent: $parentId)',
-    );
-
-    try {
-      // Step 1: Initialize local notifications FIRST (works always, even without FCM)
-      // ignore: avoid_print
-      print('📱 Step 1: Initializing local notifications...');
-      await _initializeLocalNotifications();
-      // ignore: avoid_print
-      print('✅ Step 1: Local notifications initialized');
-
-      // Step 2: Try to get FCM token FIRST (before requesting permission)
-      // ignore: avoid_print
-      print('📱 Step 2: Getting FCM token...');
-      try {
-        final token = await _messaging.getToken();
-        if (token != null && token.isNotEmpty) {
-          // ignore: avoid_print
-          print('🔑 FCM token obtained: ${token.substring(0, 20)}...');
-          await _saveToken(parentId: parentId, childId: childId, token: token);
-        } else {
-          // ignore: avoid_print
-          print('⚠️ FCM token is null or empty');
-        }
-      } catch (tokenError) {
-        // ignore: avoid_print
-        print(
-          '⚠️ Could not get FCM token yet (may need permission): $tokenError',
-        );
-      }
-
-      // Step 3: Request FCM permission (for push when app is closed)
-      // ignore: avoid_print
-      print('📱 Step 3: Requesting FCM permission...');
-      try {
-        final settings = await _messaging.requestPermission(
-          alert: true,
-          badge: true,
-          sound: true,
-        );
-
-        // ignore: avoid_print
-        print('📱 FCM Permission status: ${settings.authorizationStatus}');
-
-        if (settings.authorizationStatus == AuthorizationStatus.authorized ||
-            settings.authorizationStatus == AuthorizationStatus.provisional) {
-          await _messaging.setForegroundNotificationPresentationOptions(
-            alert: true,
-            badge: true,
-            sound: true,
-          );
-
-          // Try to get token again after permission granted
-          final tokenAfterPermission = await _messaging.getToken();
-          if (tokenAfterPermission != null && tokenAfterPermission.isNotEmpty) {
-            // ignore: avoid_print
-            print(
-              '🔑 FCM token after permission: ${tokenAfterPermission.substring(0, 20)}...',
-            );
-            await _saveToken(
-              parentId: parentId,
-              childId: childId,
-              token: tokenAfterPermission,
-            );
-          }
-        }
-      } catch (permissionError) {
-        // ignore: avoid_print
-        print('⚠️ Error requesting permission: $permissionError');
-      }
-
-      // Step 4: Setup token refresh listener (important!)
-      // ignore: avoid_print
-      print('📱 Step 4: Setting up token refresh listener...');
-      _tokenRefreshSubscription ??= _messaging.onTokenRefresh.listen((
-        newToken,
-      ) async {
-        // ignore: avoid_print
-        print('♻️ FCM token refreshed: ${newToken.substring(0, 20)}...');
-        await _saveToken(parentId: parentId, childId: childId, token: newToken);
-      });
-
-      // Step 5: Handle FCM foreground messages (backup - Firestore listener is primary)
-      // ignore: avoid_print
-      print('📱 Step 5: Setting up FCM foreground message handler...');
-      _fcmForegroundSubscription ??= FirebaseMessaging.onMessage.listen((
-        RemoteMessage message,
-      ) {
-        final notif = message.notification;
-        if (notif != null) {
-          // ignore: avoid_print
-          print('📩 FCM (foreground): ${notif.title} - ${notif.body}');
-          _showLocalNotification(
-            title: notif.title ?? 'Notification',
-            body: notif.body ?? '',
-          );
-        }
-      });
-
-      // Step 6: ✅ PRIMARY METHOD: Listen to Firestore task changes directly
-      // This works even if FCM fails - detects changes immediately
-      // ignore: avoid_print
-      print('📱 Step 6: Setting up Firestore task listener...');
-      _listenToTaskChanges(parentId, childId);
-
-      // ignore: avoid_print
-      print('✅ ===== NOTIFICATION SERVICE INIT COMPLETE =====');
-    } catch (e, stackTrace) {
-      // ignore: avoid_print
-      print('❌ ===== ERROR INITIALIZING NOTIFICATIONS =====');
-      // ignore: avoid_print
-      print('❌ Error: $e');
-      // ignore: avoid_print
-      print('❌ Stack trace: $stackTrace');
-      // Even if FCM fails, we should still setup Firestore listener
-      try {
-        // ignore: avoid_print
-        print('🔄 Attempting to setup Firestore listener as fallback...');
-        _listenToTaskChanges(parentId, childId);
-      } catch (fallbackError) {
-        // ignore: avoid_print
-        print('❌ Even Firestore listener failed: $fallbackError');
-      }
-    }
-  }
-
-  Future<void> initializeForParent({required String parentId}) async {
-    // ignore: avoid_print
-    print('🚀 ===== PARENT NOTIFICATION SERVICE INIT START =====');
-    // ignore: avoid_print
-    print('🚀 Initializing notifications for parent: $parentId');
-
-    try {
-      // Step 1: Initialize local notifications FIRST (works always, even without FCM)
-      // ignore: avoid_print
-      print('📱 Step 1: Initializing local notifications...');
-      await _initializeLocalNotifications();
-      // ignore: avoid_print
-      print('✅ Step 1: Local notifications initialized');
-
-      // Step 2: Try to get FCM token FIRST (before requesting permission)
-      // ignore: avoid_print
-      print('📱 Step 2: Getting FCM token...');
-      try {
-        final token = await _messaging.getToken();
-        if (token != null && token.isNotEmpty) {
-          // ignore: avoid_print
-          print('🔑 FCM token obtained: ${token.substring(0, 20)}...');
-          // Note: For parent, we might want to save token differently
-          // For now, we'll just use it for FCM if needed
-        } else {
-          // ignore: avoid_print
-          print('⚠️ FCM token is null or empty');
-        }
-      } catch (tokenError) {
-        // ignore: avoid_print
-        print(
-          '⚠️ Could not get FCM token yet (may need permission): $tokenError',
-        );
-      }
-
-      // Step 3: Request FCM permission (for push when app is closed)
-      // ignore: avoid_print
-      print('📱 Step 3: Requesting FCM permission...');
-      try {
-        final settings = await _messaging.requestPermission(
-          alert: true,
-          badge: true,
-          sound: true,
-        );
-
-        // ignore: avoid_print
-        print('📱 FCM Permission status: ${settings.authorizationStatus}');
-
-        if (settings.authorizationStatus == AuthorizationStatus.authorized ||
-            settings.authorizationStatus == AuthorizationStatus.provisional) {
-          await _messaging.setForegroundNotificationPresentationOptions(
-            alert: true,
-            badge: true,
-            sound: true,
-          );
-        }
-      } catch (permissionError) {
-        // ignore: avoid_print
-        print('⚠️ Error requesting permission: $permissionError');
-      }
-
-      // Step 4: Setup token refresh listener (important!)
-      // ignore: avoid_print
-      print('📱 Step 4: Setting up token refresh listener...');
-      _tokenRefreshSubscription ??= _messaging.onTokenRefresh.listen((
-        newToken,
-      ) async {
-        // ignore: avoid_print
-        print('♻️ FCM token refreshed: ${newToken.substring(0, 20)}...');
-      });
-
-      // Step 5: Handle FCM foreground messages (backup - Firestore listener is primary)
-      // ignore: avoid_print
-      print('📱 Step 5: Setting up FCM foreground message handler...');
-      _fcmForegroundSubscription ??= FirebaseMessaging.onMessage.listen((
-        RemoteMessage message,
-      ) {
-        final notif = message.notification;
-        if (notif != null) {
-          // ignore: avoid_print
-          print('📩 FCM (foreground): ${notif.title} - ${notif.body}');
-          _showParentNotification(
-            title: notif.title ?? 'Notification',
-            body: notif.body ?? '',
-          );
-        }
-      });
-
-      // Step 6: ✅ PRIMARY METHOD: Listen to Firestore task changes for all children
-      // This works even if FCM fails - detects changes immediately
-      // ignore: avoid_print
-      print(
-        '📱 Step 6: Setting up Firestore task listener for all children...',
-      );
-      _listenToParentTaskChanges(parentId);
-
-      // ignore: avoid_print
-      print('✅ ===== PARENT NOTIFICATION SERVICE INIT COMPLETE =====');
-    } catch (e, stackTrace) {
-      // ignore: avoid_print
-      print('❌ ===== ERROR INITIALIZING PARENT NOTIFICATIONS =====');
-      // ignore: avoid_print
-      print('❌ Error: $e');
-      // ignore: avoid_print
-      print('❌ Stack trace: $stackTrace');
-      // Even if FCM fails, we should still setup Firestore listener
-      try {
-        // ignore: avoid_print
-        print('🔄 Attempting to setup Firestore listener as fallback...');
-        _listenToParentTaskChanges(parentId);
-      } catch (fallbackError) {
-        // ignore: avoid_print
-        print('❌ Even Firestore listener failed: $fallbackError');
-      }
-    }
-  }
 
   Future<void> _initializeLocalNotifications() async {
     // Android initialization
@@ -438,7 +160,6 @@ class NotificationService {
     print('✅ Local notifications initialized');
   }
 
-  // Helper method to normalize task status
   String _normalizeStatus(String status) {
     final lower = status.toLowerCase().trim();
     // Normalize all "done" variations to 'done'
@@ -455,6 +176,508 @@ class NotificationService {
     if (lower == 'new' || lower == 'incomplete' || lower == 'assigned')
       return 'new';
     return lower;
+  }
+
+  double _toDouble(dynamic value) {
+    if (value == null) return 0;
+    if (value is num) return value.toDouble();
+    if (value is String) {
+      return double.tryParse(value.trim()) ?? 0;
+    }
+    return 0;
+  }
+
+  Future<void> _showLocalNotification({
+    required String title,
+    required String body,
+  }) async {
+    const AndroidNotificationDetails androidDetails =
+        AndroidNotificationDetails(
+          'task_approval_channel',
+          'Task Approvals',
+          channelDescription: 'Notifications when parent approves your tasks',
+          importance: Importance.high,
+          priority: Priority.high,
+          showWhen: true,
+          playSound: true,
+          enableVibration: true,
+        );
+
+    const DarwinNotificationDetails iosDetails = DarwinNotificationDetails(
+      presentAlert: true,
+      presentBadge: true,
+      presentSound: true,
+    );
+
+    const NotificationDetails details = NotificationDetails(
+      android: androidDetails,
+      iOS: iosDetails,
+    );
+
+    await _localNotifications.show(
+      DateTime.now().millisecondsSinceEpoch % 100000,
+      title,
+      body,
+      details,
+      payload: 'task_approved',
+    );
+
+    // ignore: avoid_print
+    print('🔔 Local notification shown: $title - $body');
+  }
+
+  Future<void> _showParentNotification({
+    required String title,
+    required String body,
+  }) async {
+    // Ensure notification always shows as system notification in notification bar
+    // This will appear in the device notification bar, not just as a popup
+    const AndroidNotificationDetails androidDetails =
+        AndroidNotificationDetails(
+          'task_completion_channel',
+          'Task Completions',
+          channelDescription: 'Notifications when your child completes a task',
+          importance: Importance
+              .max, // Maximum importance to always show in notification bar
+          priority: Priority.high,
+          showWhen: true,
+          playSound: true,
+          enableVibration: true,
+          enableLights: true,
+          channelShowBadge: true,
+        );
+
+    const DarwinNotificationDetails iosDetails = DarwinNotificationDetails(
+      presentAlert: true,
+      presentBadge: true,
+      presentSound: true,
+    );
+
+    const NotificationDetails details = NotificationDetails(
+      android: androidDetails,
+      iOS: iosDetails,
+    );
+
+    // This creates a REAL device notification that appears in the notification bar
+    // It will show even when app is in background or closed
+    await _localNotifications.show(
+      DateTime.now().millisecondsSinceEpoch % 100000 +
+          100000, // Different ID range for parent notifications
+      title,
+      body,
+      details,
+      payload: 'task_completed',
+    );
+
+    // ignore: avoid_print
+    print(
+      '🔔 Parent DEVICE notification shown in notification bar: $title - $body',
+    );
+  }
+
+  Future<void> _showNewTaskNotification({
+    required String title,
+    required String body,
+  }) async {
+    // Ensure notification always shows as system notification in notification bar
+    // This will appear in the device notification bar when parent assigns a new task
+    const AndroidNotificationDetails androidDetails =
+        AndroidNotificationDetails(
+          'new_task_channel',
+          'New Tasks',
+          channelDescription:
+              'Notifications when parent assigns you a new task',
+          importance: Importance
+              .max, // Maximum importance to always show in notification bar
+          priority: Priority.high,
+          showWhen: true,
+          playSound: true,
+          enableVibration: true,
+          enableLights: true,
+          channelShowBadge: true,
+        );
+
+    const DarwinNotificationDetails iosDetails = DarwinNotificationDetails(
+      presentAlert: true,
+      presentBadge: true,
+      presentSound: true,
+    );
+
+    const NotificationDetails details = NotificationDetails(
+      android: androidDetails,
+      iOS: iosDetails,
+    );
+
+    // This creates a REAL device notification that appears in the notification bar
+    // It will show even when app is in background or closed
+    await _localNotifications.show(
+      DateTime.now().millisecondsSinceEpoch % 100000 +
+          200000, // Different ID range for new task notifications
+      title,
+      body,
+      details,
+      payload: 'new_task_assigned',
+    );
+
+    // ignore: avoid_print
+    print(
+      '🔔 New task DEVICE notification shown in notification bar: $title - $body',
+    );
+  }
+
+  Future<void> _showTaskRejectedNotification({
+    required String title,
+    required String body,
+  }) async {
+    // Ensure notification always shows as system notification in notification bar
+    // This will appear in the device notification bar when parent declines a task
+    const AndroidNotificationDetails androidDetails =
+        AndroidNotificationDetails(
+          'task_rejection_channel',
+          'Task Rejections',
+          channelDescription: 'Notifications when parent declines your tasks',
+          importance: Importance
+              .max, // Maximum importance to always show in notification bar
+          priority: Priority.high,
+          showWhen: true,
+          playSound: true,
+          enableVibration: true,
+          enableLights: true,
+          channelShowBadge: true,
+        );
+
+    const DarwinNotificationDetails iosDetails = DarwinNotificationDetails(
+      presentAlert: true,
+      presentBadge: true,
+      presentSound: true,
+    );
+
+    const NotificationDetails details = NotificationDetails(
+      android: androidDetails,
+      iOS: iosDetails,
+    );
+
+    // This creates a REAL device notification that appears in the notification bar
+    // It will show even when app is in background or closed
+    await _localNotifications.show(
+      DateTime.now().millisecondsSinceEpoch % 100000 +
+          300000, // Different ID range for rejection notifications
+      title,
+      body,
+      details,
+      payload: 'task_rejected',
+    );
+
+    // ignore: avoid_print
+    print(
+      '🔔 Task rejected DEVICE notification shown in notification bar: $title - $body',
+    );
+  }
+
+  Future<void> _showWishlistMilestoneNotification({
+    required String title,
+    required String body,
+  }) async {
+    // Ensure notification always shows as system notification in notification bar
+    // This will appear in the device notification bar when child completes a wishlist milestone
+    const AndroidNotificationDetails androidDetails =
+        AndroidNotificationDetails(
+          'wishlist_milestone_channel',
+          'Wishlist Milestones',
+          channelDescription:
+              'Notifications when your child completes a wishlist milestone',
+          importance: Importance
+              .max, // Maximum importance to always show in notification bar
+          priority: Priority.high,
+          showWhen: true,
+          playSound: true,
+          enableVibration: true,
+          enableLights: true,
+          channelShowBadge: true,
+        );
+
+    const DarwinNotificationDetails iosDetails = DarwinNotificationDetails(
+      presentAlert: true,
+      presentBadge: true,
+      presentSound: true,
+    );
+
+    const NotificationDetails details = NotificationDetails(
+      android: androidDetails,
+      iOS: iosDetails,
+    );
+
+    // This creates a REAL device notification that appears in the notification bar
+    // It will show even when app is in background or closed
+    await _localNotifications.show(
+      DateTime.now().millisecondsSinceEpoch % 100000 +
+          400000, // Different ID range for wishlist notifications
+      title,
+      body,
+      details,
+      payload: 'wishlist_milestone',
+    );
+
+    // ignore: avoid_print
+    print(
+      '🔔 Wishlist milestone DEVICE notification shown in notification bar: $title - $body',
+    );
+  }
+
+  Future<void> _saveToken({
+    required String parentId,
+    required String childId,
+    required String token,
+  }) async {
+    final path = 'Parents/$parentId/Children/$childId';
+    // ignore: avoid_print
+    print('💾 Attempting to save FCM token to: $path');
+
+    final childRef = FirebaseFirestore.instance
+        .collection('Parents')
+        .doc(parentId)
+        .collection('Children')
+        .doc(childId);
+
+    try {
+      // First, try to get current document to see existing tokens
+      final docSnapshot = await childRef.get();
+
+      List<String> existingTokens = [];
+      if (docSnapshot.exists) {
+        final data = docSnapshot.data();
+        if (data != null && data['fcmTokens'] != null) {
+          final tokens = data['fcmTokens'];
+          if (tokens is List) {
+            existingTokens = tokens.map((e) => e.toString()).toList();
+          }
+        }
+      }
+
+      // ignore: avoid_print
+      print('💾 Existing tokens count: ${existingTokens.length}');
+
+      // Remove old tokens if this one already exists (avoid duplicates)
+      if (!existingTokens.contains(token)) {
+        existingTokens.add(token);
+      }
+
+      // Save with all tokens
+      await childRef.set({
+        'fcmTokens': existingTokens,
+        'fcmPlatform': Platform.isIOS ? 'ios' : 'android',
+        'fcmUpdatedAt': FieldValue.serverTimestamp(),
+      }, SetOptions(merge: true));
+
+      // Verify it was saved
+      final verifyDoc = await childRef.get();
+      if (verifyDoc.exists) {
+        final savedData = verifyDoc.data();
+        final savedTokens = savedData?['fcmTokens'] as List?;
+        // ignore: avoid_print
+        print(
+          '✅ FCM token saved successfully! Total tokens in DB: ${savedTokens?.length ?? 0}',
+        );
+        // ignore: avoid_print
+        print(
+          '✅ Token in DB: ${savedTokens?.isNotEmpty == true ? "YES" : "NO"}',
+        );
+      } else {
+        // ignore: avoid_print
+        print('⚠️ Document does not exist after save attempt');
+      }
+    } catch (e, stackTrace) {
+      // ignore: avoid_print
+      print('❌ Failed to save FCM token to $path');
+      // ignore: avoid_print
+      print('❌ Error: $e');
+      // ignore: avoid_print
+      print('❌ Stack: $stackTrace');
+      rethrow; // Let caller handle if needed
+    }
+  }
+
+  Future<void> testNotification() async {
+    // ignore: avoid_print
+    print('🧪 ===== TESTING NOTIFICATION =====');
+    try {
+      // ignore: avoid_print
+      print('🧪 Step 1: Ensuring local notifications are initialized...');
+
+      // Always try to show notification - if not initialized, it will fail gracefully
+      // ignore: avoid_print
+      print('🧪 Step 2: Showing test notification...');
+      await _showLocalNotification(
+        title: '🧪 Test Notification',
+        body: 'If you see this, notifications are working!',
+      );
+      // ignore: avoid_print
+      print('🧪 ✅ Test notification sent successfully!');
+    } catch (e, stackTrace) {
+      // ignore: avoid_print
+      print('🧪 ❌ Test notification failed: $e');
+      // ignore: avoid_print
+      print('🧪 Stack: $stackTrace');
+
+      // Try re-initializing and showing again
+      try {
+        // ignore: avoid_print
+        print('🧪 Attempting to re-initialize and retry...');
+        await _initializeLocalNotifications();
+        await _showLocalNotification(
+          title: '🧪 Test Notification (Retry)',
+          body: 'If you see this, notifications are working!',
+        );
+        // ignore: avoid_print
+        print('🧪 ✅ Test notification sent after re-initialization!');
+      } catch (retryError) {
+        // ignore: avoid_print
+        print('🧪 ❌ Retry also failed: $retryError');
+      }
+    }
+  }
+}
+
+class ChildNotificationService extends BaseNotificationService {
+  StreamSubscription<QuerySnapshot>? _tasksSubscription;
+  String? _lastNotifiedTaskId;
+  final Map<String, String> _taskStatusCache = {};
+  final Set<String> _notifiedNewTasks = {};
+  bool _cacheInitialized = false;
+  bool _firstSnapshotReceived = false;
+
+  Future<void> initializeForChild({
+    required String parentId,
+    required String childId,
+  }) async {
+    // ignore: avoid_print
+    print('🚀 ===== NOTIFICATION SERVICE INIT START =====');
+    // ignore: avoid_print
+    print(
+      '🚀 Initializing notifications for child: $childId (parent: $parentId)',
+    );
+
+    try {
+      // Step 1: Initialize local notifications FIRST (works always, even without FCM)
+      // ignore: avoid_print
+      print('📱 Step 1: Initializing local notifications...');
+      await _initializeLocalNotifications();
+      // ignore: avoid_print
+      print('✅ Step 1: Local notifications initialized');
+
+      // Step 2: Try to get FCM token FIRST (before requesting permission)
+      // ignore: avoid_print
+      print('📱 Step 2: Getting FCM token...');
+      try {
+        final token = await _messaging.getToken();
+        if (token != null && token.isNotEmpty) {
+          // ignore: avoid_print
+          print('🔑 FCM token obtained: ${token.substring(0, 20)}...');
+          await _saveToken(parentId: parentId, childId: childId, token: token);
+        } else {
+          // ignore: avoid_print
+          print('⚠️ FCM token is null or empty');
+        }
+      } catch (tokenError) {
+        // ignore: avoid_print
+        print(
+          '⚠️ Could not get FCM token yet (may need permission): $tokenError',
+        );
+      }
+
+      // Step 3: Request FCM permission (for push when app is closed)
+      // ignore: avoid_print
+      print('📱 Step 3: Requesting FCM permission...');
+      try {
+        final settings = await _messaging.requestPermission(
+          alert: true,
+          badge: true,
+          sound: true,
+        );
+
+        // ignore: avoid_print
+        print('📱 FCM Permission status: ${settings.authorizationStatus}');
+
+        if (settings.authorizationStatus == AuthorizationStatus.authorized ||
+            settings.authorizationStatus == AuthorizationStatus.provisional) {
+          await _messaging.setForegroundNotificationPresentationOptions(
+            alert: true,
+            badge: true,
+            sound: true,
+          );
+
+          // Try to get token again after permission granted
+          final tokenAfterPermission = await _messaging.getToken();
+          if (tokenAfterPermission != null && tokenAfterPermission.isNotEmpty) {
+            // ignore: avoid_print
+            print(
+              '🔑 FCM token after permission: ${tokenAfterPermission.substring(0, 20)}...',
+            );
+            await _saveToken(
+              parentId: parentId,
+              childId: childId,
+              token: tokenAfterPermission,
+            );
+          }
+        }
+      } catch (permissionError) {
+        // ignore: avoid_print
+        print('⚠️ Error requesting permission: $permissionError');
+      }
+
+      // Step 4: Setup token refresh listener (important!)
+      // ignore: avoid_print
+      print('📱 Step 4: Setting up token refresh listener...');
+      _tokenRefreshSubscription ??= _messaging.onTokenRefresh.listen((
+        newToken,
+      ) async {
+        // ignore: avoid_print
+        print('♻️ FCM token refreshed: ${newToken.substring(0, 20)}...');
+        await _saveToken(parentId: parentId, childId: childId, token: newToken);
+      });
+
+      // Step 5: Handle FCM foreground messages (backup - Firestore listener is primary)
+      // ignore: avoid_print
+      print('📱 Step 5: Setting up FCM foreground message handler...');
+      _fcmForegroundSubscription ??= FirebaseMessaging.onMessage.listen((
+        RemoteMessage message,
+      ) {
+        final notif = message.notification;
+        if (notif != null) {
+          // ignore: avoid_print
+          print('📩 FCM (foreground): ${notif.title} - ${notif.body}');
+          _showLocalNotification(
+            title: notif.title ?? 'Notification',
+            body: notif.body ?? '',
+          );
+        }
+      });
+
+      // Step 6: ✅ PRIMARY METHOD: Listen to Firestore task changes directly
+      // This works even if FCM fails - detects changes immediately
+      // ignore: avoid_print
+      print('📱 Step 6: Setting up Firestore task listener...');
+      _listenToTaskChanges(parentId, childId);
+
+      // ignore: avoid_print
+      print('✅ ===== NOTIFICATION SERVICE INIT COMPLETE =====');
+    } catch (e, stackTrace) {
+      // ignore: avoid_print
+      print('❌ ===== ERROR INITIALIZING NOTIFICATIONS =====');
+      // ignore: avoid_print
+      print('❌ Error: $e');
+      // ignore: avoid_print
+      print('❌ Stack trace: $stackTrace');
+      // Even if FCM fails, we should still setup Firestore listener
+      try {
+        // ignore: avoid_print
+        print('🔄 Attempting to setup Firestore listener as fallback...');
+        _listenToTaskChanges(parentId, childId);
+      } catch (fallbackError) {
+        // ignore: avoid_print
+        print('❌ Even Firestore listener failed: $fallbackError');
+      }
+    }
   }
 
   void _listenToTaskChanges(String parentId, String childId) {
@@ -845,6 +1068,151 @@ class NotificationService {
 
     // ignore: avoid_print
     print('✅ Firestore listener active - watching for pending->done changes');
+  }
+
+  Future<bool> isInitialized() async {
+    return _cacheInitialized && _tasksSubscription != null;
+  }
+
+  void dispose() {
+    _tasksSubscription?.cancel();
+    _fcmForegroundSubscription?.cancel();
+    _tokenRefreshSubscription?.cancel();
+    _lastNotifiedTaskId = null;
+    _taskStatusCache.clear();
+    _notifiedNewTasks.clear();
+    _cacheInitialized = false;
+    _firstSnapshotReceived = false;
+  }
+}
+
+class ParentNotificationService extends BaseNotificationService {
+  StreamSubscription<QuerySnapshot>? _parentTasksSubscription;
+  StreamSubscription<QuerySnapshot>? _parentChildrenSubscription;
+  String? _lastNotifiedParentTaskId;
+  final Map<String, String> _parentTaskStatusCache = {};
+  final Map<String, StreamSubscription<QuerySnapshot>> _childTaskSubscriptions =
+      {};
+  final Map<String, StreamSubscription<QuerySnapshot>>
+  _childWishlistSubscriptions = {};
+  final Map<String, bool> _wishlistItemCompletionCache = {};
+  bool _parentCacheInitialized = false;
+
+  Future<void> initializeForParent({required String parentId}) async {
+    // ignore: avoid_print
+    print('🚀 ===== PARENT NOTIFICATION SERVICE INIT START =====');
+    // ignore: avoid_print
+    print('🚀 Initializing notifications for parent: $parentId');
+
+    try {
+      // Step 1: Initialize local notifications FIRST (works always, even without FCM)
+      // ignore: avoid_print
+      print('📱 Step 1: Initializing local notifications...');
+      await _initializeLocalNotifications();
+      // ignore: avoid_print
+      print('✅ Step 1: Local notifications initialized');
+
+      // Step 2: Try to get FCM token FIRST (before requesting permission)
+      // ignore: avoid_print
+      print('📱 Step 2: Getting FCM token...');
+      try {
+        final token = await _messaging.getToken();
+        if (token != null && token.isNotEmpty) {
+          // ignore: avoid_print
+          print('🔑 FCM token obtained: ${token.substring(0, 20)}...');
+          // Note: For parent, we might want to save token differently
+          // For now, we'll just use it for FCM if needed
+        } else {
+          // ignore: avoid_print
+          print('⚠️ FCM token is null or empty');
+        }
+      } catch (tokenError) {
+        // ignore: avoid_print
+        print(
+          '⚠️ Could not get FCM token yet (may need permission): $tokenError',
+        );
+      }
+
+      // Step 3: Request FCM permission (for push when app is closed)
+      // ignore: avoid_print
+      print('📱 Step 3: Requesting FCM permission...');
+      try {
+        final settings = await _messaging.requestPermission(
+          alert: true,
+          badge: true,
+          sound: true,
+        );
+
+        // ignore: avoid_print
+        print('📱 FCM Permission status: ${settings.authorizationStatus}');
+
+        if (settings.authorizationStatus == AuthorizationStatus.authorized ||
+            settings.authorizationStatus == AuthorizationStatus.provisional) {
+          await _messaging.setForegroundNotificationPresentationOptions(
+            alert: true,
+            badge: true,
+            sound: true,
+          );
+        }
+      } catch (permissionError) {
+        // ignore: avoid_print
+        print('⚠️ Error requesting permission: $permissionError');
+      }
+
+      // Step 4: Setup token refresh listener (important!)
+      // ignore: avoid_print
+      print('📱 Step 4: Setting up token refresh listener...');
+      _tokenRefreshSubscription ??= _messaging.onTokenRefresh.listen((
+        newToken,
+      ) async {
+        // ignore: avoid_print
+        print('♻️ FCM token refreshed: ${newToken.substring(0, 20)}...');
+      });
+
+      // Step 5: Handle FCM foreground messages (backup - Firestore listener is primary)
+      // ignore: avoid_print
+      print('📱 Step 5: Setting up FCM foreground message handler...');
+      _fcmForegroundSubscription ??= FirebaseMessaging.onMessage.listen((
+        RemoteMessage message,
+      ) {
+        final notif = message.notification;
+        if (notif != null) {
+          // ignore: avoid_print
+          print('📩 FCM (foreground): ${notif.title} - ${notif.body}');
+          _showParentNotification(
+            title: notif.title ?? 'Notification',
+            body: notif.body ?? '',
+          );
+        }
+      });
+
+      // Step 6: ✅ PRIMARY METHOD: Listen to Firestore task changes for all children
+      // This works even if FCM fails - detects changes immediately
+      // ignore: avoid_print
+      print(
+        '📱 Step 6: Setting up Firestore task listener for all children...',
+      );
+      _listenToParentTaskChanges(parentId);
+
+      // ignore: avoid_print
+      print('✅ ===== PARENT NOTIFICATION SERVICE INIT COMPLETE =====');
+    } catch (e, stackTrace) {
+      // ignore: avoid_print
+      print('❌ ===== ERROR INITIALIZING PARENT NOTIFICATIONS =====');
+      // ignore: avoid_print
+      print('❌ Error: $e');
+      // ignore: avoid_print
+      print('❌ Stack trace: $stackTrace');
+      // Even if FCM fails, we should still setup Firestore listener
+      try {
+        // ignore: avoid_print
+        print('🔄 Attempting to setup Firestore listener as fallback...');
+        _listenToParentTaskChanges(parentId);
+      } catch (fallbackError) {
+        // ignore: avoid_print
+        print('❌ Even Firestore listener failed: $fallbackError');
+      }
+    }
   }
 
   void _listenToParentTaskChanges(String parentId) {
@@ -1286,383 +1654,15 @@ class NotificationService {
     return explicitCompleted || statusCompleted || progressCompleted;
   }
 
-  double _toDouble(dynamic value) {
-    if (value == null) return 0;
-    if (value is num) return value.toDouble();
-    if (value is String) {
-      return double.tryParse(value.trim()) ?? 0;
-    }
-    return 0;
-  }
-
-  Future<void> _showLocalNotification({
-    required String title,
-    required String body,
-  }) async {
-    const AndroidNotificationDetails androidDetails =
-        AndroidNotificationDetails(
-          'task_approval_channel',
-          'Task Approvals',
-          channelDescription: 'Notifications when parent approves your tasks',
-          importance: Importance.high,
-          priority: Priority.high,
-          showWhen: true,
-          playSound: true,
-          enableVibration: true,
-        );
-
-    const DarwinNotificationDetails iosDetails = DarwinNotificationDetails(
-      presentAlert: true,
-      presentBadge: true,
-      presentSound: true,
-    );
-
-    const NotificationDetails details = NotificationDetails(
-      android: androidDetails,
-      iOS: iosDetails,
-    );
-
-    await _localNotifications.show(
-      DateTime.now().millisecondsSinceEpoch % 100000,
-      title,
-      body,
-      details,
-      payload: 'task_approved',
-    );
-
-    // ignore: avoid_print
-    print('🔔 Local notification shown: $title - $body');
-  }
-
-  Future<void> _showParentNotification({
-    required String title,
-    required String body,
-  }) async {
-    // Ensure notification always shows as system notification in notification bar
-    // This will appear in the device notification bar, not just as a popup
-    const AndroidNotificationDetails androidDetails =
-        AndroidNotificationDetails(
-          'task_completion_channel',
-          'Task Completions',
-          channelDescription: 'Notifications when your child completes a task',
-          importance: Importance
-              .max, // Maximum importance to always show in notification bar
-          priority: Priority.high,
-          showWhen: true,
-          playSound: true,
-          enableVibration: true,
-          enableLights: true,
-          channelShowBadge: true,
-        );
-
-    const DarwinNotificationDetails iosDetails = DarwinNotificationDetails(
-      presentAlert: true,
-      presentBadge: true,
-      presentSound: true,
-    );
-
-    const NotificationDetails details = NotificationDetails(
-      android: androidDetails,
-      iOS: iosDetails,
-    );
-
-    // This creates a REAL device notification that appears in the notification bar
-    // It will show even when app is in background or closed
-    await _localNotifications.show(
-      DateTime.now().millisecondsSinceEpoch % 100000 +
-          100000, // Different ID range for parent notifications
-      title,
-      body,
-      details,
-      payload: 'task_completed',
-    );
-
-    // ignore: avoid_print
-    print(
-      '🔔 Parent DEVICE notification shown in notification bar: $title - $body',
-    );
-  }
-
-  Future<void> _showNewTaskNotification({
-    required String title,
-    required String body,
-  }) async {
-    // Ensure notification always shows as system notification in notification bar
-    // This will appear in the device notification bar when parent assigns a new task
-    const AndroidNotificationDetails androidDetails =
-        AndroidNotificationDetails(
-          'new_task_channel',
-          'New Tasks',
-          channelDescription:
-              'Notifications when parent assigns you a new task',
-          importance: Importance
-              .max, // Maximum importance to always show in notification bar
-          priority: Priority.high,
-          showWhen: true,
-          playSound: true,
-          enableVibration: true,
-          enableLights: true,
-          channelShowBadge: true,
-        );
-
-    const DarwinNotificationDetails iosDetails = DarwinNotificationDetails(
-      presentAlert: true,
-      presentBadge: true,
-      presentSound: true,
-    );
-
-    const NotificationDetails details = NotificationDetails(
-      android: androidDetails,
-      iOS: iosDetails,
-    );
-
-    // This creates a REAL device notification that appears in the notification bar
-    // It will show even when app is in background or closed
-    await _localNotifications.show(
-      DateTime.now().millisecondsSinceEpoch % 100000 +
-          200000, // Different ID range for new task notifications
-      title,
-      body,
-      details,
-      payload: 'new_task_assigned',
-    );
-
-    // ignore: avoid_print
-    print(
-      '🔔 New task DEVICE notification shown in notification bar: $title - $body',
-    );
-  }
-
-  Future<void> _showTaskRejectedNotification({
-    required String title,
-    required String body,
-  }) async {
-    // Ensure notification always shows as system notification in notification bar
-    // This will appear in the device notification bar when parent declines a task
-    const AndroidNotificationDetails androidDetails =
-        AndroidNotificationDetails(
-          'task_rejection_channel',
-          'Task Rejections',
-          channelDescription: 'Notifications when parent declines your tasks',
-          importance: Importance
-              .max, // Maximum importance to always show in notification bar
-          priority: Priority.high,
-          showWhen: true,
-          playSound: true,
-          enableVibration: true,
-          enableLights: true,
-          channelShowBadge: true,
-        );
-
-    const DarwinNotificationDetails iosDetails = DarwinNotificationDetails(
-      presentAlert: true,
-      presentBadge: true,
-      presentSound: true,
-    );
-
-    const NotificationDetails details = NotificationDetails(
-      android: androidDetails,
-      iOS: iosDetails,
-    );
-
-    // This creates a REAL device notification that appears in the notification bar
-    // It will show even when app is in background or closed
-    await _localNotifications.show(
-      DateTime.now().millisecondsSinceEpoch % 100000 +
-          300000, // Different ID range for rejection notifications
-      title,
-      body,
-      details,
-      payload: 'task_rejected',
-    );
-
-    // ignore: avoid_print
-    print(
-      '🔔 Task rejected DEVICE notification shown in notification bar: $title - $body',
-    );
-  }
-
-  Future<void> _showWishlistMilestoneNotification({
-    required String title,
-    required String body,
-  }) async {
-    // Ensure notification always shows as system notification in notification bar
-    // This will appear in the device notification bar when child completes a wishlist milestone
-    const AndroidNotificationDetails androidDetails =
-        AndroidNotificationDetails(
-          'wishlist_milestone_channel',
-          'Wishlist Milestones',
-          channelDescription:
-              'Notifications when your child completes a wishlist milestone',
-          importance: Importance
-              .max, // Maximum importance to always show in notification bar
-          priority: Priority.high,
-          showWhen: true,
-          playSound: true,
-          enableVibration: true,
-          enableLights: true,
-          channelShowBadge: true,
-        );
-
-    const DarwinNotificationDetails iosDetails = DarwinNotificationDetails(
-      presentAlert: true,
-      presentBadge: true,
-      presentSound: true,
-    );
-
-    const NotificationDetails details = NotificationDetails(
-      android: androidDetails,
-      iOS: iosDetails,
-    );
-
-    // This creates a REAL device notification that appears in the notification bar
-    // It will show even when app is in background or closed
-    await _localNotifications.show(
-      DateTime.now().millisecondsSinceEpoch % 100000 +
-          400000, // Different ID range for wishlist notifications
-      title,
-      body,
-      details,
-      payload: 'wishlist_milestone',
-    );
-
-    // ignore: avoid_print
-    print(
-      '🔔 Wishlist milestone DEVICE notification shown in notification bar: $title - $body',
-    );
-  }
-
-  Future<void> _saveToken({
-    required String parentId,
-    required String childId,
-    required String token,
-  }) async {
-    final path = 'Parents/$parentId/Children/$childId';
-    // ignore: avoid_print
-    print('💾 Attempting to save FCM token to: $path');
-
-    final childRef = FirebaseFirestore.instance
-        .collection('Parents')
-        .doc(parentId)
-        .collection('Children')
-        .doc(childId);
-
-    try {
-      // First, try to get current document to see existing tokens
-      final docSnapshot = await childRef.get();
-
-      List<String> existingTokens = [];
-      if (docSnapshot.exists) {
-        final data = docSnapshot.data();
-        if (data != null && data['fcmTokens'] != null) {
-          final tokens = data['fcmTokens'];
-          if (tokens is List) {
-            existingTokens = tokens.map((e) => e.toString()).toList();
-          }
-        }
-      }
-
-      // ignore: avoid_print
-      print('💾 Existing tokens count: ${existingTokens.length}');
-
-      // Remove old tokens if this one already exists (avoid duplicates)
-      if (!existingTokens.contains(token)) {
-        existingTokens.add(token);
-      }
-
-      // Save with all tokens
-      await childRef.set({
-        'fcmTokens': existingTokens,
-        'fcmPlatform': Platform.isIOS ? 'ios' : 'android',
-        'fcmUpdatedAt': FieldValue.serverTimestamp(),
-      }, SetOptions(merge: true));
-
-      // Verify it was saved
-      final verifyDoc = await childRef.get();
-      if (verifyDoc.exists) {
-        final savedData = verifyDoc.data();
-        final savedTokens = savedData?['fcmTokens'] as List?;
-        // ignore: avoid_print
-        print(
-          '✅ FCM token saved successfully! Total tokens in DB: ${savedTokens?.length ?? 0}',
-        );
-        // ignore: avoid_print
-        print(
-          '✅ Token in DB: ${savedTokens?.isNotEmpty == true ? "YES" : "NO"}',
-        );
-      } else {
-        // ignore: avoid_print
-        print('⚠️ Document does not exist after save attempt');
-      }
-    } catch (e, stackTrace) {
-      // ignore: avoid_print
-      print('❌ Failed to save FCM token to $path');
-      // ignore: avoid_print
-      print('❌ Error: $e');
-      // ignore: avoid_print
-      print('❌ Stack: $stackTrace');
-      rethrow; // Let caller handle if needed
-    }
-  }
-
-  // Test method to manually trigger a notification (for debugging)
-  Future<void> testNotification() async {
-    // ignore: avoid_print
-    print('🧪 ===== TESTING NOTIFICATION =====');
-    try {
-      // ignore: avoid_print
-      print('🧪 Step 1: Ensuring local notifications are initialized...');
-
-      // Always try to show notification - if not initialized, it will fail gracefully
-      // ignore: avoid_print
-      print('🧪 Step 2: Showing test notification...');
-      await _showLocalNotification(
-        title: '🧪 Test Notification',
-        body: 'If you see this, notifications are working!',
-      );
-      // ignore: avoid_print
-      print('🧪 ✅ Test notification sent successfully!');
-    } catch (e, stackTrace) {
-      // ignore: avoid_print
-      print('🧪 ❌ Test notification failed: $e');
-      // ignore: avoid_print
-      print('🧪 Stack: $stackTrace');
-
-      // Try re-initializing and showing again
-      try {
-        // ignore: avoid_print
-        print('🧪 Attempting to re-initialize and retry...');
-        await _initializeLocalNotifications();
-        await _showLocalNotification(
-          title: '🧪 Test Notification (Retry)',
-          body: 'If you see this, notifications are working!',
-        );
-        // ignore: avoid_print
-        print('🧪 ✅ Test notification sent after re-initialization!');
-      } catch (retryError) {
-        // ignore: avoid_print
-        print('🧪 ❌ Retry also failed: $retryError');
-      }
-    }
-  }
-
-  // Check if notifications are properly set up
-  Future<bool> isInitialized() async {
-    return _cacheInitialized && _tasksSubscription != null;
-  }
-
   void dispose() {
-    _tasksSubscription?.cancel();
     _parentTasksSubscription?.cancel();
     _parentChildrenSubscription?.cancel();
 
-    // Cancel all child task subscriptions
     for (var subscription in _childTaskSubscriptions.values) {
       subscription.cancel();
     }
     _childTaskSubscriptions.clear();
 
-    // Cancel all child wishlist subscriptions
     for (var subscription in _childWishlistSubscriptions.values) {
       subscription.cancel();
     }
@@ -1670,13 +1670,45 @@ class NotificationService {
 
     _fcmForegroundSubscription?.cancel();
     _tokenRefreshSubscription?.cancel();
-    _lastNotifiedTaskId = null;
     _lastNotifiedParentTaskId = null;
-    _taskStatusCache.clear();
     _parentTaskStatusCache.clear();
     _wishlistItemCompletionCache.clear();
-    _notifiedNewTasks.clear();
-    _cacheInitialized = false;
     _parentCacheInitialized = false;
+  }
+}
+
+class NotificationService {
+  NotificationService._internal();
+  static final NotificationService _instance = NotificationService._internal();
+  factory NotificationService() => _instance;
+
+  final ChildNotificationService _childService = ChildNotificationService();
+  final ParentNotificationService _parentService = ParentNotificationService();
+
+  Future<void> initializeForChild({
+    required String parentId,
+    required String childId,
+  }) {
+    return _childService.initializeForChild(
+      parentId: parentId,
+      childId: childId,
+    );
+  }
+
+  Future<void> initializeForParent({required String parentId}) {
+    return _parentService.initializeForParent(parentId: parentId);
+  }
+
+  Future<void> testNotification() {
+    return _childService.testNotification();
+  }
+
+  Future<bool> isInitialized() {
+    return _childService.isInitialized();
+  }
+
+  void dispose() {
+    _childService.dispose();
+    _parentService.dispose();
   }
 }
