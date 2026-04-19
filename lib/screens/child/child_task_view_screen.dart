@@ -25,6 +25,15 @@ class ChildTaskViewScreen extends StatefulWidget {
 }
 
 class _ChildTaskViewScreenState extends State<ChildTaskViewScreen> {
+  CollectionReference<Map<String, dynamic>> _tasksRef() {
+    return FirebaseFirestore.instance
+        .collection('Parents')
+        .doc(_currentParentId)
+        .collection('Children')
+        .doc(_currentChildId)
+        .collection('Tasks');
+  }
+
   int _navBarIndex =
       1; // For bottom navigation (0=Home, 1=Tasks, 2=Wishlist, 3=Leaderboard)
   int _taskTabIndex = 0; // For internal task tabs (0=New, 1=Pending, 2=Done)
@@ -284,9 +293,11 @@ class _ChildTaskViewScreenState extends State<ChildTaskViewScreen> {
               .where((t) => t.status.toLowerCase() == 'pending')
               .toList();
           final doneTasks = allTasks
-               .where((t) => 
-                  t.status.toLowerCase() == 'done' || 
-                  t.status.toLowerCase() == 'rejected')
+              .where(
+                (t) =>
+                    t.status.toLowerCase() == 'done' ||
+                    t.status.toLowerCase() == 'rejected',
+              )
               //.where((t) => t.status.toLowerCase() == 'done')
               .toList();
 
@@ -470,17 +481,20 @@ class _ChildTaskViewScreenState extends State<ChildTaskViewScreen> {
     List<Task> completedTasksForEarning,
   ) {
     final totalTasks = allTasks.length;
-   /* final totalEarned = completedTasksForEarning.fold(
+    /* final totalEarned = completedTasksForEarning.fold(
       0.0,
       (sum, task) => sum + task.allowance,
     );*/
     // Only count approved tasks (status = 'done'), NOT rejected tasks
-   // final totalEarned = completedTasksForEarning
-   final approvedTasks = completedTasksForEarning
+    // final totalEarned = completedTasksForEarning
+    final approvedTasks = completedTasksForEarning
         .where((task) => task.status.toLowerCase() == 'done')
         //.fold(0.0, (sum, task) => sum + task.allowance);
         .toList();
-    final totalEarned = approvedTasks.fold(0.0, (sum, task) => sum + task.allowance);
+    final totalEarned = approvedTasks.fold(
+      0.0,
+      (sum, task) => sum + task.allowance,
+    );
     final childName = _currentChild?.firstName ?? 'Nouf';
 
     return Container(
@@ -842,11 +856,13 @@ class _ChildTaskViewScreenState extends State<ChildTaskViewScreen> {
 
   Widget _buildTaskCard(Task task) {
     final isChallenge = task.isChallenge;
-    final cardColor = isChallenge 
+    final cardColor = isChallenge
         ? const Color(0xFFFFD700).withOpacity(0.1) // Light gold background
         : Colors.white;
     final borderColor = isChallenge
-        ? Colors.amber.shade600 // Gold border
+        ? Colors
+              .amber
+              .shade600 // Gold border
         : Colors.transparent;
 
     return Container(
@@ -859,10 +875,7 @@ class _ChildTaskViewScreenState extends State<ChildTaskViewScreen> {
         borderRadius: BorderRadius.circular(
           MediaQuery.of(context).size.width * 0.04,
         ),
-        border: Border.all(
-          color: borderColor,
-          width: isChallenge ? 2.0 : 0.0,
-        ),
+        border: Border.all(color: borderColor, width: isChallenge ? 2.0 : 0.0),
         boxShadow: [
           BoxShadow(
             color: isChallenge
@@ -884,10 +897,7 @@ class _ChildTaskViewScreenState extends State<ChildTaskViewScreen> {
               padding: EdgeInsets.symmetric(horizontal: 12, vertical: 6),
               decoration: BoxDecoration(
                 gradient: LinearGradient(
-                  colors: [
-                    Colors.amber.shade600,
-                    Colors.amber.shade800,
-                  ],
+                  colors: [Colors.amber.shade600, Colors.amber.shade800],
                   begin: Alignment.centerLeft,
                   end: Alignment.centerRight,
                 ),
@@ -896,11 +906,7 @@ class _ChildTaskViewScreenState extends State<ChildTaskViewScreen> {
               child: Row(
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  Icon(
-                    Icons.workspace_premium,
-                    color: Colors.white,
-                    size: 16,
-                  ),
+                  Icon(Icons.workspace_premium, color: Colors.white, size: 16),
                   SizedBox(width: 6),
                   Text(
                     'Challenge Task',
@@ -948,8 +954,8 @@ class _ChildTaskViewScreenState extends State<ChildTaskViewScreen> {
                       style: TextStyle(
                         fontSize: MediaQuery.of(context).size.width * 0.045,
                         fontWeight: FontWeight.w600,
-                        color: isChallenge 
-                            ? Colors.amber.shade900 
+                        color: isChallenge
+                            ? Colors.amber.shade900
                             : Color(0xFF333333),
                       ),
                       overflow: TextOverflow.ellipsis,
@@ -1153,7 +1159,7 @@ class _ChildTaskViewScreenState extends State<ChildTaskViewScreen> {
 
   Widget _buildPendingTaskCard(Task task) {
     final isChallenge = task.isChallenge;
-    final cardColor = isChallenge 
+    final cardColor = isChallenge
         ? const Color(0xFFFFD700).withOpacity(0.1)
         : Colors.white;
     final borderColor = isChallenge
@@ -1166,10 +1172,7 @@ class _ChildTaskViewScreenState extends State<ChildTaskViewScreen> {
       decoration: BoxDecoration(
         color: cardColor,
         borderRadius: BorderRadius.circular(16),
-        border: Border.all(
-          color: borderColor,
-          width: isChallenge ? 2.0 : 0.0,
-        ),
+        border: Border.all(color: borderColor, width: isChallenge ? 2.0 : 0.0),
         boxShadow: [
           BoxShadow(
             color: isChallenge
@@ -1191,10 +1194,7 @@ class _ChildTaskViewScreenState extends State<ChildTaskViewScreen> {
               padding: EdgeInsets.symmetric(horizontal: 12, vertical: 6),
               decoration: BoxDecoration(
                 gradient: LinearGradient(
-                  colors: [
-                    Colors.amber.shade600,
-                    Colors.amber.shade800,
-                  ],
+                  colors: [Colors.amber.shade600, Colors.amber.shade800],
                   begin: Alignment.centerLeft,
                   end: Alignment.centerRight,
                 ),
@@ -1203,11 +1203,7 @@ class _ChildTaskViewScreenState extends State<ChildTaskViewScreen> {
               child: Row(
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  Icon(
-                    Icons.workspace_premium,
-                    color: Colors.white,
-                    size: 16,
-                  ),
+                  Icon(Icons.workspace_premium, color: Colors.white, size: 16),
                   SizedBox(width: 6),
                   Text(
                     'Challenge Task',
@@ -1222,80 +1218,80 @@ class _ChildTaskViewScreenState extends State<ChildTaskViewScreen> {
               ),
             ),
           Row(
-        children: [
-          Container(
-            padding: EdgeInsets.all(8),
-            decoration: BoxDecoration(
-              color: Colors.orange.withOpacity(0.1),
-              borderRadius: BorderRadius.circular(8),
-            ),
-            child: Icon(Icons.schedule, color: Colors.orange, size: 24),
-          ),
-          SizedBox(width: 16),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  task.taskName,
-                  style: TextStyle(
-                    fontSize: 16,
-                    fontWeight: FontWeight.w600,
-                    color: isChallenge 
-                        ? Colors.amber.shade900 
-                        : Color(0xFF333333),
-                  ),
+            children: [
+              Container(
+                padding: EdgeInsets.all(8),
+                decoration: BoxDecoration(
+                  color: Colors.orange.withOpacity(0.1),
+                  borderRadius: BorderRadius.circular(8),
                 ),
-                SizedBox(height: 4),
-                Row(
+                child: Icon(Icons.schedule, color: Colors.orange, size: 24),
+              ),
+              SizedBox(width: 16),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Icon(
-                      _getPriorityInfo(task.priority)['icon'],
-                      size: 12,
-                      color: _getPriorityInfo(task.priority)['color'],
-                    ),
-                    SizedBox(width: 4),
                     Text(
-                      _getPriorityInfo(task.priority)['text'],
+                      task.taskName,
                       style: TextStyle(
-                        fontSize: 12,
-                        color: _getPriorityInfo(task.priority)['color'],
+                        fontSize: 16,
+                        fontWeight: FontWeight.w600,
+                        color: isChallenge
+                            ? Colors.amber.shade900
+                            : Color(0xFF333333),
+                      ),
+                    ),
+                    SizedBox(height: 4),
+                    Row(
+                      children: [
+                        Icon(
+                          _getPriorityInfo(task.priority)['icon'],
+                          size: 12,
+                          color: _getPriorityInfo(task.priority)['color'],
+                        ),
+                        SizedBox(width: 4),
+                        Text(
+                          _getPriorityInfo(task.priority)['text'],
+                          style: TextStyle(
+                            fontSize: 12,
+                            color: _getPriorityInfo(task.priority)['color'],
+                            fontWeight: FontWeight.w500,
+                          ),
+                        ),
+                      ],
+                    ),
+                    SizedBox(height: 4),
+                    Text(
+                      'Waiting for parent approval • +${task.allowance.toStringAsFixed(0)} ﷼',
+                      style: TextStyle(
+                        fontSize: 14,
+                        color: Colors.orange,
                         fontWeight: FontWeight.w500,
                       ),
                     ),
                   ],
                 ),
-                SizedBox(height: 4),
-                Text(
-                  'Waiting for parent approval • +${task.allowance.toStringAsFixed(0)} ﷼',
-                  style: TextStyle(
-                    fontSize: 14,
-                    color: Colors.orange,
-                    fontWeight: FontWeight.w500,
+              ),
+              if (_getTaskImage(task) != null) ...[
+                SizedBox(width: 12),
+                GestureDetector(
+                  onTap: () => _showImageDialog(_getTaskImage(task)!),
+                  child: Container(
+                    width: 60,
+                    height: 60,
+                    decoration: BoxDecoration(
+                      borderRadius: BorderRadius.circular(8),
+                      border: Border.all(color: Colors.grey[300]!),
+                    ),
+                    child: ClipRRect(
+                      borderRadius: BorderRadius.circular(8),
+                      child: _buildTaskImage(_getTaskImage(task)!),
+                    ),
                   ),
                 ),
               ],
-            ),
-          ),
-          if (_getTaskImage(task) != null) ...[
-            SizedBox(width: 12),
-            GestureDetector(
-              onTap: () => _showImageDialog(_getTaskImage(task)!),
-              child: Container(
-                width: 60,
-                height: 60,
-                decoration: BoxDecoration(
-                  borderRadius: BorderRadius.circular(8),
-                  border: Border.all(color: Colors.grey[300]!),
-                ),
-                child: ClipRRect(
-                  borderRadius: BorderRadius.circular(8),
-                  child: _buildTaskImage(_getTaskImage(task)!),
-                ),
-              ),
-            ),
-          ],
-        ],
+            ],
           ),
         ],
       ),
@@ -1306,19 +1302,17 @@ class _ChildTaskViewScreenState extends State<ChildTaskViewScreen> {
     // Determine status-based colors, icons, and messages
     final bool isDone = task.status.toLowerCase() == 'done';
     final bool isRejected = task.status.toLowerCase() == 'rejected';
-    final Color statusColor = isDone 
-        ? Colors.green 
+    final Color statusColor = isDone
+        ? Colors.green
         : (isRejected ? Colors.red : Colors.grey);
-    final IconData statusIcon = isDone 
-        ? Icons.check_circle 
+    final IconData statusIcon = isDone
+        ? Icons.check_circle
         : (isRejected ? Icons.cancel : Icons.help_outline);
     final String statusMessage = isDone
         ? 'Approved by parent • +${task.allowance.toStringAsFixed(0)} ﷼'
-        : (isRejected 
-            ? 'Rejected by parent' 
-            : 'Unknown status');
+        : (isRejected ? 'Rejected by parent' : 'Unknown status');
     final Color cardColor = Colors.white;
-    
+
     return Container(
       margin: EdgeInsets.only(bottom: 16),
       padding: EdgeInsets.all(20),
@@ -1346,10 +1340,7 @@ class _ChildTaskViewScreenState extends State<ChildTaskViewScreen> {
               padding: EdgeInsets.symmetric(horizontal: 12, vertical: 6),
               decoration: BoxDecoration(
                 gradient: LinearGradient(
-                  colors: [
-                    Colors.amber.shade600,
-                    Colors.amber.shade800,
-                  ],
+                  colors: [Colors.amber.shade600, Colors.amber.shade800],
                   begin: Alignment.centerLeft,
                   end: Alignment.centerRight,
                 ),
@@ -1358,11 +1349,7 @@ class _ChildTaskViewScreenState extends State<ChildTaskViewScreen> {
               child: Row(
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  Icon(
-                    Icons.workspace_premium,
-                    color: Colors.white,
-                    size: 16,
-                  ),
+                  Icon(Icons.workspace_premium, color: Colors.white, size: 16),
                   SizedBox(width: 6),
                   Text(
                     'Challenge Task',
@@ -1377,78 +1364,78 @@ class _ChildTaskViewScreenState extends State<ChildTaskViewScreen> {
               ),
             ),
           Row(
-        children: [
-          Container(
-            padding: EdgeInsets.all(8),
-            decoration: BoxDecoration(
-              color: statusColor.withOpacity(0.1),
-              borderRadius: BorderRadius.circular(8),
-            ),
-            child: Icon(statusIcon, color: statusColor, size: 24),
-          ),
-          SizedBox(width: 16),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  task.taskName,
-                  style: TextStyle(
-                    fontSize: 16,
-                    fontWeight: FontWeight.w600,
-                    color: Color(0xFF333333),
-                  ),
+            children: [
+              Container(
+                padding: EdgeInsets.all(8),
+                decoration: BoxDecoration(
+                  color: statusColor.withOpacity(0.1),
+                  borderRadius: BorderRadius.circular(8),
                 ),
-                SizedBox(height: 4),
-                Row(
+                child: Icon(statusIcon, color: statusColor, size: 24),
+              ),
+              SizedBox(width: 16),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Icon(
-                      _getPriorityInfo(task.priority)['icon'],
-                      size: 12,
-                      color: _getPriorityInfo(task.priority)['color'],
-                    ),
-                    SizedBox(width: 4),
                     Text(
-                      _getPriorityInfo(task.priority)['text'],
+                      task.taskName,
                       style: TextStyle(
-                        fontSize: 12,
-                        color: _getPriorityInfo(task.priority)['color'],
+                        fontSize: 16,
+                        fontWeight: FontWeight.w600,
+                        color: Color(0xFF333333),
+                      ),
+                    ),
+                    SizedBox(height: 4),
+                    Row(
+                      children: [
+                        Icon(
+                          _getPriorityInfo(task.priority)['icon'],
+                          size: 12,
+                          color: _getPriorityInfo(task.priority)['color'],
+                        ),
+                        SizedBox(width: 4),
+                        Text(
+                          _getPriorityInfo(task.priority)['text'],
+                          style: TextStyle(
+                            fontSize: 12,
+                            color: _getPriorityInfo(task.priority)['color'],
+                            fontWeight: FontWeight.w500,
+                          ),
+                        ),
+                      ],
+                    ),
+                    SizedBox(height: 4),
+                    Text(
+                      statusMessage,
+                      style: TextStyle(
+                        fontSize: 14,
+                        color: statusColor,
                         fontWeight: FontWeight.w500,
                       ),
                     ),
                   ],
                 ),
-                SizedBox(height: 4),
-                Text(
-                  statusMessage,
-                  style: TextStyle(
-                    fontSize: 14,
-                    color: statusColor,
-                    fontWeight: FontWeight.w500,
+              ),
+              if (_getTaskImage(task) != null) ...[
+                SizedBox(width: 12),
+                GestureDetector(
+                  onTap: () => _showImageDialog(_getTaskImage(task)!),
+                  child: Container(
+                    width: 60,
+                    height: 60,
+                    decoration: BoxDecoration(
+                      borderRadius: BorderRadius.circular(8),
+                      border: Border.all(color: Colors.grey[300]!),
+                    ),
+                    child: ClipRRect(
+                      borderRadius: BorderRadius.circular(8),
+                      child: _buildTaskImage(_getTaskImage(task)!),
+                    ),
                   ),
                 ),
               ],
-            ),
-          ),
-          if (_getTaskImage(task) != null) ...[
-            SizedBox(width: 12),
-            GestureDetector(
-              onTap: () => _showImageDialog(_getTaskImage(task)!),
-              child: Container(
-                width: 60,
-                height: 60,
-                decoration: BoxDecoration(
-                  borderRadius: BorderRadius.circular(8),
-                  border: Border.all(color: Colors.grey[300]!),
-                ),
-                child: ClipRRect(
-                  borderRadius: BorderRadius.circular(8),
-                  child: _buildTaskImage(_getTaskImage(task)!),
-                ),
-              ),
-            ),
-          ],
-        ],
+            ],
           ),
         ],
       ),
@@ -1744,7 +1731,7 @@ class _ChildTaskViewScreenState extends State<ChildTaskViewScreen> {
                   child: Text('Upload & Complete'),
                 ),
               ],*/
-                return Dialog(
+            return Dialog(
               shape: RoundedRectangleBorder(
                 borderRadius: BorderRadius.circular(16),
               ),
@@ -1776,7 +1763,7 @@ class _ChildTaskViewScreenState extends State<ChildTaskViewScreen> {
                       ],
                     ),
                     SizedBox(height: 16),
-                    
+
                     // Content
                     Flexible(
                       child: SingleChildScrollView(
@@ -1821,7 +1808,10 @@ class _ChildTaskViewScreenState extends State<ChildTaskViewScreen> {
                                   errorBuilder: (context, error, stackTrace) {
                                     return Container(
                                       color: Colors.grey[200],
-                                      child: Icon(Icons.error, color: Colors.red),
+                                      child: Icon(
+                                        Icons.error,
+                                        color: Colors.red,
+                                      ),
                                     );
                                   },
                                 ),
@@ -1832,7 +1822,7 @@ class _ChildTaskViewScreenState extends State<ChildTaskViewScreen> {
                       ),
                     ),
                     SizedBox(height: 20),
-                    
+
                     // Actions
                     Row(
                       children: [
@@ -1865,7 +1855,6 @@ class _ChildTaskViewScreenState extends State<ChildTaskViewScreen> {
                               'Upload & Complete',
                               textAlign: TextAlign.center,
                               style: TextStyle(fontSize: 16),
-                        
                             ),
                           ),
                         ),
@@ -1874,7 +1863,6 @@ class _ChildTaskViewScreenState extends State<ChildTaskViewScreen> {
                   ],
                 ),
               ),
-
             );
           },
         );
@@ -1935,15 +1923,9 @@ class _ChildTaskViewScreenState extends State<ChildTaskViewScreen> {
         imageUrl,
       );
 
-      // ✅ Add completedDate
-      await FirebaseFirestore.instance
-          .collection('Parents')
-          .doc(_currentParentId)
-          .collection('Children')
-          .doc(_currentChildId)
-          .collection('Tasks')
-          .doc(task.id)
-          .update({'completedDate': FieldValue.serverTimestamp()});
+      await _tasksRef().doc(task.id).update({
+        'completedDate': FieldValue.serverTimestamp(),
+      });
 
       // Close loading dialog
       if (Navigator.of(context).canPop()) {
@@ -2092,16 +2074,9 @@ class _ChildTaskViewScreenState extends State<ChildTaskViewScreen> {
           task.id,
           'pending',
         );
-        // ✅ Add completedDate timestamp when task is submitted
-        await FirebaseFirestore.instance
-            .collection('Parents')
-            .doc(_currentParentId)
-            .collection('Children')
-            .doc(_currentChildId)
-            .collection('Tasks')
-            .doc(task.id)
-            .update({'completedDate': FieldValue.serverTimestamp()});
-
+        await _tasksRef().doc(task.id).update({
+          'completedDate': FieldValue.serverTimestamp(),
+        });
         // Close loading dialog
         if (Navigator.of(context).canPop()) {
           Navigator.of(context).pop();
@@ -2388,4 +2363,3 @@ class _ChildTaskViewScreenState extends State<ChildTaskViewScreen> {
     return task.image ?? task.completedImagePath;
   }
 }
-
