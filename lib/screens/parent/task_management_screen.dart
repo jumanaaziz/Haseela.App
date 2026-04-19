@@ -4,6 +4,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:toastification/toastification.dart';
 import 'package:flutter_screenutil/flutter_screenutil.dart';
+import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 
 import '../../models/task.dart';
 import 'assign_task_screen.dart';
@@ -167,7 +168,7 @@ class _TaskManagementScreenState extends State<TaskManagementScreen> {
     // If it's a challenge task, delete it from all other children too
     if (isChallenge && taskName.isNotEmpty) {
       print('🔄 Deleting challenge task "$taskName" from all children');
-      
+
       // Get all children
       final childrenSnapshot = await FirebaseFirestore.instance
           .collection("Parents")
@@ -179,7 +180,7 @@ class _TaskManagementScreenState extends State<TaskManagementScreen> {
       final deletePromises = <Future>[];
       for (var childDoc in childrenSnapshot.docs) {
         final childId = childDoc.id;
-        
+
         // Skip the selected child since we already deleted it
         if (childId == selectedUserId) continue;
 
@@ -210,7 +211,9 @@ class _TaskManagementScreenState extends State<TaskManagementScreen> {
 
       // Wait for all deletions to complete
       await Future.wait(deletePromises);
-      print('✅ Deleted challenge task "$taskName" from ${deletePromises.length} other children');
+      print(
+        '✅ Deleted challenge task "$taskName" from ${deletePromises.length} other children',
+      );
     }
   }
 
@@ -807,6 +810,16 @@ class _TaskManagementScreenState extends State<TaskManagementScreen> {
                           );
                         }
 
+                        // ✅ CRITICAL: Check for overdue tasks FIRST using RAW Firestore data
+                        // This MUST run on every StreamBuilder update, not just once
+                        _checkAndNotifyOverdueTasksFromRawDocs(
+                          docs
+                              .cast<
+                                QueryDocumentSnapshot<Map<String, dynamic>>
+                              >(),
+                          selectedUserId,
+                        );
+
                         final allTasks = docs.map((doc) {
                           final data = doc.data() as Map<String, dynamic>;
 
@@ -992,6 +1005,128 @@ class _TaskManagementScreenState extends State<TaskManagementScreen> {
         ),
       ),
     );
+  }
+
+  /// ✅ CRITICAL: Check for overdue tasks using RAW Firestore data
+  /// This MUST run inside StreamBuilder on every update
+  /// Condition: (status == "new" OR status == "pending") && dueDate < now && isOverdue != true
+  Future<void> _checkAndNotifyOverdueTasksFromRawDocs(
+    List<QueryDocumentSnapshot<Map<String, dynamic>>> docs,
+    String childId,
+  ) async {
+    if (childId.isEmpty) return;
+
+    final now = DateTime.now();
+    final nowMillis = now.millisecondsSinceEpoch;
+    final localNotifications = FlutterLocalNotificationsPlugin();
+
+    for (final doc in docs) {
+      final data = doc.data();
+
+      // ✅ EXACT CONDITION CHECK using RAW Firestore data
+      final rawStatus = (data['status'] ?? '').toString();
+      final dueDateTimestamp = data['dueDate'] as Timestamp?;
+      final isOverdue = data['isOverdue'] as bool? ?? false;
+      final taskName = data['taskName'] ?? 'A task';
+
+      // ✅ Check exact condition: status == "new" OR status == "pending" (case-insensitive)
+      // Note: Firestore may store "new", "New", "pending", "Pending", etc. - we check lowercase
+      final statusLower = rawStatus.toLowerCase().trim();
+      final isNewOrPending = statusLower == 'new' || statusLower == 'pending';
+
+      // ✅ Check if dueDate exists and is in the past
+      int? dueDateMillis;
+      if (dueDateTimestamp != null) {
+        dueDateMillis = dueDateTimestamp.millisecondsSinceEpoch;
+      } else if (data['dueDate'] is int) {
+        dueDateMillis = data['dueDate'] as int;
+      }
+
+      // ✅ EXACT CONDITION: (status == "new" OR "pending") && dueDate < now && isOverdue != true
+      if (isNewOrPending &&
+          dueDateMillis != null &&
+          dueDateMillis < nowMillis &&
+          isOverdue != true) {
+        print(
+          '🔔 OVERDUE TASK DETECTED: $taskName | status=$rawStatus | dueDate=$dueDateMillis | now=$nowMillis | isOverdue=$isOverdue',
+        );
+
+        try {
+          // 1. Mark task as overdue in Firestore
+          await FirebaseFirestore.instance
+              .collection('Parents')
+              .doc(_uid)
+              .collection('Children')
+              .doc(childId)
+              .collection('Tasks')
+              .doc(doc.id)
+              .update({'isOverdue': true});
+
+          // 2. Create notification entry
+          final notificationId = DateTime.now().millisecondsSinceEpoch
+              .toString();
+          final notificationData = {
+            'type': 'overdue_task',
+            'title': 'Task Overdue',
+            'body': "The task '$taskName' is now overdue.",
+            'createdAt': nowMillis,
+            'isRead': false,
+          };
+
+          // 3. Save notification to Firestore (path: notifications/{parentId}/notifications/{notificationId})
+          await FirebaseFirestore.instance
+              .collection('notifications')
+              .doc(_uid)
+              .collection('notifications')
+              .doc(notificationId)
+              .set(notificationData);
+
+          // 4. Show local push-style notification pop-up (same pattern as existing notifications)
+          const AndroidNotificationDetails androidDetails =
+              AndroidNotificationDetails(
+                'task_completion_channel',
+                'Task Completions',
+                channelDescription:
+                    'Notifications when your child completes a task',
+                importance: Importance.max,
+                priority: Priority.high,
+                showWhen: true,
+                playSound: true,
+                enableVibration: true,
+                enableLights: true,
+                channelShowBadge: true,
+              );
+
+          const DarwinNotificationDetails iosDetails =
+              DarwinNotificationDetails(
+                presentAlert: true,
+                presentBadge: true,
+                presentSound: true,
+              );
+
+          const NotificationDetails details = NotificationDetails(
+            android: androidDetails,
+            iOS: iosDetails,
+          );
+
+          await localNotifications.show(
+            DateTime.now().millisecondsSinceEpoch % 100000 +
+                200000, // Different ID range for overdue notifications
+            'Task Overdue',
+            "The task '$taskName' is now overdue.",
+            details,
+            payload: 'overdue_task',
+          );
+
+          print(
+            '✅ Overdue task processed: $taskName | Notification created and shown',
+          );
+        } catch (e, stackTrace) {
+          print('❌ Error processing overdue task: $e');
+          print('Stack trace: $stackTrace');
+        }
+      }
+    }
   }
 }
 

@@ -60,45 +60,51 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   Future<void> _loadData() async {
+    _beginLoadAttempt();
+    try {
+      await Future.wait([_fetchChildProfile(), _loadUserData()]);
+      print('✅ Data loading completed successfully');
+      _onLoadDataSuccess();
+    } catch (e) {
+      print('❌ Data loading error: $e');
+      await _onLoadDataFailure(e);
+    }
+  }
+
+  void _beginLoadAttempt() {
     setState(() {
       isLoading = true;
       hasError = false;
       errorMessage = null;
     });
+  }
 
-    try {
-      await Future.wait([_fetchChildProfile(), _loadUserData()]);
-      print('✅ Data loading completed successfully');
-      if (mounted) {
-        setState(() {
-          isLoading = false;
-          hasError = false;
-        });
-      }
-    } catch (e) {
-      print('❌ Data loading error: $e');
-      if (mounted) {
-        if (!hasRetried) {
-          // First failure - retry automatically
-          print('🔄 First failure, retrying automatically...');
-          setState(() {
-            hasRetried = true;
-            isLoading = true;
-          });
-          // Wait a bit before retry
-          await Future.delayed(const Duration(seconds: 1));
-          await _loadData();
-        } else {
-          // Second failure - show error
-          print('❌ Retry failed, showing error');
-          setState(() {
-            isLoading = false;
-            hasError = true;
-            errorMessage = e.toString();
-          });
-          _showErrorSnackBar();
-        }
-      }
+  void _onLoadDataSuccess() {
+    if (!mounted) return;
+    setState(() {
+      isLoading = false;
+      hasError = false;
+    });
+  }
+
+  Future<void> _onLoadDataFailure(Object e) async {
+    if (!mounted) return;
+    if (!hasRetried) {
+      print('🔄 First failure, retrying automatically...');
+      setState(() {
+        hasRetried = true;
+        isLoading = true;
+      });
+      await Future.delayed(const Duration(seconds: 1));
+      await _loadData();
+    } else {
+      print('❌ Retry failed, showing error');
+      setState(() {
+        isLoading = false;
+        hasError = true;
+        errorMessage = e.toString();
+      });
+      _showErrorSnackBar();
     }
   }
 

@@ -408,100 +408,39 @@ class _TransferScreenState extends State<TransferScreen> {
 
   Future<void> _performTransfer() async {
     // Enhanced validation
-    if (_amountController.text.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text('Please enter an amount to transfer'),
-          backgroundColor: const Color(0xFFFF6A5D),
-          duration: Duration(seconds: 3),
-        ),
-      );
-      return;
-    }
+final amount = double.tryParse(_amountController.text);
 
-    final amount = double.tryParse(_amountController.text);
+double fromBalance = 0;
+switch (_fromWallet) {
+  case 'total':
+    fromBalance = widget.userWallet.totalBalance;
+    break;
+  case 'spending':
+    fromBalance = widget.userWallet.spendingBalance;
+    break;
+  case 'saving':
+    fromBalance = widget.userWallet.savingBalance;
+    break;
+}
 
-    if (amount == null) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text('Please enter a valid number (e.g., 50.00)'),
-          backgroundColor: const Color(0xFFFF6A5D),
-          duration: Duration(seconds: 3),
-        ),
-      );
-      return;
-    }
+bool isInvalidTransfer =
+    _amountController.text.isEmpty ||
+    amount == null ||
+    amount <= 0 ||
+    amount > 999999.99 ||
+    _fromWallet == _toWallet ||
+    (_fromWallet == 'saving' && !(widget.isSavingGoalReached ?? true)) ||
+    amount > fromBalance;
 
-    if (amount <= 0) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text('Amount must be greater than 0'),
-          backgroundColor: const Color(0xFFFF6A5D),
-          duration: Duration(seconds: 3),
-        ),
-      );
-      return;
-    }
-
-    if (amount > 999999.99) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text('Amount cannot exceed 999,999.99 SAR'),
-          backgroundColor: const Color(0xFFFF6A5D),
-          duration: Duration(seconds: 3),
-        ),
-      );
-      return;
-    }
-
-    if (_fromWallet == _toWallet) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text('Cannot transfer to the same wallet'),
-          backgroundColor: const Color(0xFFFF6A5D),
-          duration: Duration(seconds: 3),
-        ),
-      );
-      return;
-    }
-
-    // Check if trying to transfer from saving wallet when locked
-    if (_fromWallet == 'saving' && !(widget.isSavingGoalReached ?? true)) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(
-            'Saving wallet is locked! Reach your goal to unlock transfers.',
-          ),
-          backgroundColor: const Color(0xFFFF6A5D),
-          duration: Duration(seconds: 3),
-        ),
-      );
-      return;
-    }
-
-    // Check if sufficient balance
-    double fromBalance = 0;
-    switch (_fromWallet) {
-      case 'total':
-        fromBalance = widget.userWallet.totalBalance;
-        break;
-      case 'spending':
-        fromBalance = widget.userWallet.spendingBalance;
-        break;
-      case 'saving':
-        fromBalance = widget.userWallet.savingBalance;
-        break;
-    }
-
-    if (amount > fromBalance) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text('Insufficient balance'),
-          backgroundColor: const Color(0xFFFF6A5D),
-        ),
-      );
-      return;
-    }
+if (isInvalidTransfer) {
+  ScaffoldMessenger.of(context).showSnackBar(
+    SnackBar(
+      content: Text('Invalid transfer request. Please check your input.'),
+      backgroundColor: const Color(0xFFFF6A5D),
+    ),
+  );
+  return;
+}
 
     setState(() {
       _isLoading = true;
